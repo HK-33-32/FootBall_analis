@@ -1,0 +1,106 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "global_player_id": {
+      "title": "Global Player Id",
+      "type": "string"
+    },
+    "match_id": {
+      "title": "Match Id",
+      "type": "string"
+    },
+    "tracklet_ids": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Tracklet Ids",
+      "type": "array"
+    },
+    "team": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Team"
+    },
+    "team_confidence": {
+      "default": 0,
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Team Confidence",
+      "type": "number"
+    },
+    "jersey_number": {
+      "anyOf": [
+        {
+          "maximum": 99,
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Jersey Number"
+    },
+    "jersey_confidence": {
+      "default": 0,
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Jersey Confidence",
+      "type": "number"
+    },
+    "roster_player_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Roster Player Id"
+    },
+    "roster_name": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Roster Name"
+    },
+    "identity_confidence": {
+      "default": 0,
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Identity Confidence",
+      "type": "number"
+    },
+    "unresolved_conflicts": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Unresolved Conflicts",
+      "type": "array"
+    }
+  },
+  "required": [
+    "global_player_id",
+    "match_id",
+    "tracklet_ids"
+  ],
+  "title": "GlobalPlayerMemory",
+  "type": "object"
+}

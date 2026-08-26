@@ -1,0 +1,288 @@
+{
+  "$defs": {
+    "CandidateScore": {
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "$ref": "#/$defs/EventType"
+        },
+        "confidence": {
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Confidence",
+          "type": "number"
+        }
+      },
+      "required": [
+        "label",
+        "confidence"
+      ],
+      "title": "CandidateScore",
+      "type": "object"
+    },
+    "EventOutcome": {
+      "enum": [
+        "complete",
+        "incomplete",
+        "won",
+        "lost",
+        "unknown"
+      ],
+      "title": "EventOutcome",
+      "type": "string"
+    },
+    "EventType": {
+      "enum": [
+        "touch",
+        "controlled_possession",
+        "intentional_pass",
+        "clearance",
+        "interception",
+        "recovery",
+        "tackle",
+        "duel",
+        "shot",
+        "unknown"
+      ],
+      "title": "EventType",
+      "type": "string"
+    },
+    "EvidenceRef": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_id": {
+          "minLength": 1,
+          "title": "Evidence Id",
+          "type": "string"
+        },
+        "match_id": {
+          "minLength": 1,
+          "title": "Match Id",
+          "type": "string"
+        },
+        "source_uri": {
+          "minLength": 1,
+          "title": "Source Uri",
+          "type": "string"
+        },
+        "start_ms": {
+          "minimum": 0,
+          "title": "Start Ms",
+          "type": "integer"
+        },
+        "end_ms": {
+          "minimum": 0,
+          "title": "End Ms",
+          "type": "integer"
+        },
+        "timestamps_ms": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Timestamps Ms",
+          "type": "array"
+        },
+        "frame_indices": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Frame Indices",
+          "type": "array"
+        },
+        "crop_boxes_xyxy": {
+          "items": {
+            "maxItems": 4,
+            "minItems": 4,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Crop Boxes Xyxy",
+          "type": "array"
+        },
+        "source_kind": {
+          "default": "video",
+          "title": "Source Kind",
+          "type": "string"
+        },
+        "content_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Sha256"
+        }
+      },
+      "required": [
+        "evidence_id",
+        "match_id",
+        "source_uri",
+        "start_ms",
+        "end_ms"
+      ],
+      "title": "EvidenceRef",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "default": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "event_id": {
+      "minLength": 1,
+      "title": "Event Id",
+      "type": "string"
+    },
+    "match_id": {
+      "minLength": 1,
+      "title": "Match Id",
+      "type": "string"
+    },
+    "primary_event": {
+      "$ref": "#/$defs/EventType"
+    },
+    "confidence": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "actor_global_player_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Actor Global Player Id"
+    },
+    "target_global_player_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Target Global Player Id"
+    },
+    "outcome": {
+      "$ref": "#/$defs/EventOutcome",
+      "default": "unknown"
+    },
+    "start_ms": {
+      "minimum": 0,
+      "title": "Start Ms",
+      "type": "integer"
+    },
+    "end_ms": {
+      "minimum": 0,
+      "title": "End Ms",
+      "type": "integer"
+    },
+    "evidence": {
+      "items": {
+        "$ref": "#/$defs/EvidenceRef"
+      },
+      "minItems": 1,
+      "title": "Evidence",
+      "type": "array"
+    },
+    "alternatives": {
+      "items": {
+        "$ref": "#/$defs/CandidateScore"
+      },
+      "title": "Alternatives",
+      "type": "array"
+    },
+    "insufficient_evidence": {
+      "default": false,
+      "title": "Insufficient Evidence",
+      "type": "boolean"
+    },
+    "analysis_pass": {
+      "default": 1,
+      "maximum": 2,
+      "minimum": 1,
+      "title": "Analysis Pass",
+      "type": "integer"
+    },
+    "trigger_reasons": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Trigger Reasons",
+      "type": "array"
+    },
+    "model_name": {
+      "title": "Model Name",
+      "type": "string"
+    },
+    "model_revision": {
+      "title": "Model Revision",
+      "type": "string"
+    },
+    "prompt_version": {
+      "title": "Prompt Version",
+      "type": "string"
+    },
+    "raw_model_score": {
+      "anyOf": [
+        {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Raw Model Score"
+    },
+    "attributes": {
+      "additionalProperties": true,
+      "title": "Attributes",
+      "type": "object"
+    }
+  },
+  "required": [
+    "event_id",
+    "match_id",
+    "primary_event",
+    "confidence",
+    "start_ms",
+    "end_ms",
+    "evidence",
+    "model_name",
+    "model_revision",
+    "prompt_version"
+  ],
+  "title": "SemanticEvent",
+  "type": "object"
+}

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Football Intelligence Lab</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <header>
+    <div><span class="eyebrow">EVIDENCE LAB</span><h1>Football Intelligence</h1></div>
+    <div id="health" class="health">Проверка сервисов…</div>
+  </header>
+  <main>
+    <aside>
+      <section>
+        <h2>Новый прогон</h2>
+        <form id="jobForm">
+          <label>Видео<input id="video" type="file" accept="video/*"></label>
+          <div class="grid2"><label>Match ID<input id="matchId" value="debug-match"></label><label>FPS<input id="fps" type="number" value="12" min="1" max="30"></label></div>
+          <div class="grid2"><label>Начало, с<input id="start" type="number" value="0" min="0"></label><label>Конец, с<input id="end" type="number" value="30" min="0.2"></label></div>
+          <fieldset>
+            <legend>Заявка на матч</legend>
+            <label>Сохранённая заявка<select id="rosterSelect"><option value="">Без заявки</option></select></label>
+            <label>Загрузить JSON<input id="rosterFile" type="file" accept="application/json,.json"></label>
+            <label>Составы и номера<textarea id="rosterJson" rows="8" placeholder='{"name":"Матч", "teams":[...]}'></textarea></label>
+            <button id="saveRoster" type="button" class="secondary">Проверить и сохранить заявку</button>
+            <label class="check"><input id="startingOnly" type="checkbox" checked> Только стартовые 11 (до замен)</label>
+            <p id="rosterStatus" class="muted"></p>
+          </fieldset>
+          <label>Готовый events.json (необязательно)<input id="eventsPath" placeholder="C:\\...\\events.json"></label>
+          <label>Готовый predictions.json<input id="predictionsPath" placeholder="C:\\...\\predictions.json"></label>
+          <label class="check"><input id="renderVideo" type="checkbox" checked> Сохранить размеченное видео</label>
+          <label class="check"><input id="semantics" type="checkbox" checked> VLM semantic pass + active re-analysis</label>
+          <button type="submit">Запустить анализ</button>
+        </form>
+        <p id="formStatus" class="muted"></p>
+      </section>
+      <section><div class="section-title"><h2>Задачи</h2><button id="refresh" class="ghost">↻</button></div><div id="jobs"></div></section>
+    </aside>
+    <article>
+      <nav><button data-tab="events" class="active">События</button><button data-tab="players">Игроки</button><button data-tab="stats">Статистика</button><button data-tab="raw">Прогон</button></nav>
+      <div id="summary" class="summary"><div><span>Матч</span><strong>—</strong></div><div><span>Coverage</span><strong>—</strong></div><div><span>События</span><strong>—</strong></div><div><span>Pass 2</span><strong>—</strong></div></div>
+      <div id="videoView"></div>
+      <section id="eventsView" class="view"><div class="empty">Выберите завершённый прогон. Каждое событие будет связано с исходным видео и временным окном.</div></section>
+      <section id="playersView" class="view hidden"></section>
+      <section id="statsView" class="view hidden"><pre id="statsRaw"></pre></section>
+      <section id="rawView" class="view hidden"><pre id="raw"></pre></section>
+    </article>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

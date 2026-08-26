@@ -1,0 +1,10 @@
+extends: default.yaml
+semantic:
+  quantization: bitsandbytes-4bit
+  gpu_memory_utilization: 0.88
+  max_frames_first: 10
+  max_frames_second: 24
+  max_image_edge_px: 960
+  normal_window_ms: [-3000, 4000]
+  ambiguous_window_ms: [-6000, 8000]
+

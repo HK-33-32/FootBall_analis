@@ -1,0 +1,43 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "football-intelligence"
+version = "0.1.0"
+description = "Evidence-grounded, local-first football match intelligence"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "Apache-2.0"}
+dependencies = [
+  "fastapi==0.141.1",
+  "httpx==0.28.1",
+  "numpy==2.2.6",
+  "opencv-python-headless==4.12.0.88",
+  "pydantic==2.13.4",
+  "python-multipart==0.0.32",
+  "PyYAML==6.0.3",
+  "scipy==1.16.1",
+  "uvicorn[standard]==0.35.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==8.4.1", "pytest-cov==6.2.1", "ruff==0.12.10"]
+benchmark = ["SoccerNet==0.1.62"]
+
+[project.scripts]
+football-intelligence = "football_intelligence.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/football_intelligence"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

@@ -1,0 +1,4 @@
+{"truth":"intentional_pass","prediction":"intentional_pass","confidence":0.91,"insufficient_evidence":false,"evidence_id":"gold-pass-clear"}
+{"truth":"clearance","prediction":"clearance","confidence":0.84,"insufficient_evidence":false,"evidence_id":"gold-clearance-clear"}
+{"truth":"interception","prediction":"unknown","confidence":0.42,"insufficient_evidence":true,"evidence_id":"gold-ambiguous"}
+

@@ -1,0 +1,74 @@
+name: football-intelligence
+
+services:
+  api:
+    build:
+      context: .
+    image: football-intelligence:0.1.0
+    ports:
+      - "${FI_PORT:-8080}:8080"
+    volumes:
+      - ./data:/data
+    environment:
+      FI_DATA_DIR: /data/runtime
+      FI_CONFIG: /app/configs/local_16gb.yaml
+      FI_PERCEPTION_URL: "${FI_PERCEPTION_URL:-}"
+      FI_PERCEPTION_API_KEY: "${FI_PERCEPTION_API_KEY:-}"
+      FI_VLM_BASE_URL: "${FI_VLM_BASE_URL:-}"
+      FI_VLM_MODEL: "${FI_VLM_MODEL:-Qwen/Qwen3-VL-8B-Instruct}"
+      FI_VLM_REVISION: "${FI_VLM_REVISION:-a115a837cf3cbba4b697aa74b609721b5009ed41}"
+      FI_VLM_API_KEY: "${FI_VLM_API_KEY:-EMPTY}"
+    restart: unless-stopped
+
+  perception:
+    profiles: ["full"]
+    image: "${FI_PERCEPTION_IMAGE:-football-core:1.0.0}"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data/perception:/data
+      - "${FI_LEGACY_WEIGHTS:-../../Football_grade/football_core/weights}:/weights:ro"
+    environment:
+      FG_CHECKPOINT_DIR: /weights/checkpoints
+      RF_HOME: /weights/rfdetr
+      FG_DEFAULT_RENDER_VIDEO: "false"
+      FG_QUEUE_WORKERS: "1"
+    shm_size: 8gb
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  vlm:
+    profiles: ["full"]
+    image: "${FI_VLLM_IMAGE:-vllm/vllm-openai:v0.11.0}"
+    command:
+      - --model
+      - Qwen/Qwen3-VL-8B-Instruct
+      - --revision
+      - a115a837cf3cbba4b697aa74b609721b5009ed41
+      - --served-model-name
+      - Qwen/Qwen3-VL-8B-Instruct
+      - --quantization
+      - bitsandbytes
+      - --load-format
+      - bitsandbytes
+      - --gpu-memory-utilization
+      - "0.88"
+      - --limit-mm-per-prompt
+      - '{"image":24}'
+    ports:
+      - "8001:8000"
+    volumes:
+      - "${HF_HOME:-./data/huggingface}:/root/.cache/huggingface"
+    shm_size: 8gb
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

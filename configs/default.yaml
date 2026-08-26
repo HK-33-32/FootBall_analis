@@ -1,0 +1,26 @@
+pipeline:
+  segment_seconds: 60
+  perception_fps: 12
+  source_time_unit: ms
+best_views:
+  top_k: 8
+  min_time_gap_ms: 500
+  max_cosine_similarity: 0.96
+identity:
+  reid_weight: 0.55
+  team_weight: 0.20
+  jersey_weight: 0.25
+  merge_threshold: 0.70
+  overlap_tolerance_ms: 200
+  suppress_imbalanced_team_evidence: true
+  min_team_share: 0.20
+  min_team_tracklets: 8
+semantic:
+  model: Qwen/Qwen3-VL-8B-Instruct
+  revision: a115a837cf3cbba4b697aa74b609721b5009ed41
+  prompt_version: event-v1.0.0
+  event_schema_version: 1.0.0
+  first_pass_fps: 1.5
+  second_pass_fps: 4.0
+  event_confidence_threshold: 0.68
+  alternative_margin_threshold: 0.18

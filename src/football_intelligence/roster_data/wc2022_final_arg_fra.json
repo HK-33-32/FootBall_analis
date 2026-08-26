@@ -1,0 +1,37 @@
+{
+  "name": "ЧМ-2022, финал: Аргентина — Франция (18.12.2022)",
+  "note": "Турнирные заявки обеих сборных. Используются как допустимые номера и источник фамилий; стартовый состав задаётся отдельно системой состава матча.",
+  "teams": [
+    {
+      "team": "Argentina",
+      "short": "ARG",
+      "players": {
+        "1": "Armani", "2": "Foyth", "3": "Tagliafico", "4": "Montiel",
+        "5": "Paredes", "6": "Pezzella", "7": "De Paul", "8": "Acuña",
+        "9": "Álvarez", "10": "Messi", "11": "Di María", "12": "Rulli",
+        "13": "Romero", "14": "Palacios", "15": "Correa", "16": "Almada",
+        "17": "Gómez", "18": "G. Rodríguez", "19": "Otamendi",
+        "20": "Mac Allister", "21": "Dybala", "22": "L. Martínez",
+        "23": "E. Martínez", "24": "E. Fernández", "25": "L. Martínez",
+        "26": "Molina"
+      },
+      "goalkeepers": ["1", "12", "23"],
+      "starting_lineup": ["23", "26", "13", "19", "3", "7", "24", "20", "11", "10", "9"]
+    },
+    {
+      "team": "France",
+      "short": "FRA",
+      "players": {
+        "1": "Lloris", "2": "Pavard", "3": "Disasi", "4": "Varane",
+        "5": "Koundé", "6": "Camavinga", "7": "Griezmann", "8": "Tchouaméni",
+        "9": "Giroud", "10": "Mbappé", "11": "Dembélé", "12": "Kolo Muani",
+        "13": "Fofana", "14": "Rabiot", "15": "Veretout", "16": "Mandanda",
+        "17": "Saliba", "18": "Upamecano", "19": "Benzema", "20": "Coman",
+        "21": "L. Hernández", "22": "T. Hernández", "23": "Areola",
+        "24": "Konaté", "25": "Guendouzi", "26": "Thuram"
+      },
+      "goalkeepers": ["1", "16", "23"],
+      "starting_lineup": ["1", "5", "4", "18", "22", "8", "14", "7", "11", "9", "10"]
+    }
+  ]
+}

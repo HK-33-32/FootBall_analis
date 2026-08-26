@@ -1,0 +1,91 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "default": "1.0.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "timestamp": {
+      "title": "Timestamp",
+      "type": "string"
+    },
+    "git_commit": {
+      "title": "Git Commit",
+      "type": "string"
+    },
+    "dirty_worktree": {
+      "title": "Dirty Worktree",
+      "type": "boolean"
+    },
+    "dataset": {
+      "title": "Dataset",
+      "type": "string"
+    },
+    "split": {
+      "title": "Split",
+      "type": "string"
+    },
+    "config_hash": {
+      "title": "Config Hash",
+      "type": "string"
+    },
+    "models": {
+      "additionalProperties": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Models",
+      "type": "object"
+    },
+    "prompt_versions": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Prompt Versions",
+      "type": "object"
+    },
+    "schema_versions": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Schema Versions",
+      "type": "object"
+    },
+    "hardware": {
+      "additionalProperties": true,
+      "title": "Hardware",
+      "type": "object"
+    },
+    "software": {
+      "additionalProperties": true,
+      "title": "Software",
+      "type": "object"
+    },
+    "seed": {
+      "default": 0,
+      "title": "Seed",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "run_id",
+    "timestamp",
+    "git_commit",
+    "dirty_worktree",
+    "dataset",
+    "split",
+    "config_hash",
+    "models",
+    "prompt_versions",
+    "schema_versions",
+    "hardware",
+    "software"
+  ],
+  "title": "ModelRun",
+  "type": "object"
+}

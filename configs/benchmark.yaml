@@ -1,0 +1,13 @@
+extends: default.yaml
+run:
+  seed: 0
+  save_effective_config: true
+  save_per_sample: true
+  save_failures: true
+  report_compute: true
+evaluation:
+  frozen_split_file: data/splits/gsr_frozen_test.txt
+  semantic_gold_file: data/semantic_events/gold.jsonl
+  confidence_bins: 10
+  bootstrap_samples: 2000
+
