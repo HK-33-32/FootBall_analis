@@ -93,3 +93,70 @@ def test_the_older_lab_frontend_is_still_reachable(tmp_path):
         lab = client.get("/lab")
         assert lab.status_code == 200
         assert "EVIDENCE LAB" in lab.text
+
+
+def test_the_backend_check_reports_what_is_missing(tmp_path, monkeypatch):
+    reports = tmp_path / "reports"
+    reports.mkdir()
+    monkeypatch.setenv("FI_REPORTS_DIR", str(reports))
+    monkeypatch.setenv("FI_CORE_URL", "http://127.0.0.1:9")  # nothing listens there
+
+    with TestClient(create_app(tmp_path / "runtime")) as client:
+        info = client.get("/api/v1/analysis/backend").json()
+        assert info["reachable"] is False
+        assert info["reports_writable"] is True
+
+
+def test_a_run_cannot_start_without_a_video(tmp_path, monkeypatch):
+    reports = tmp_path / "reports"
+    reports.mkdir()
+    monkeypatch.setenv("FI_REPORTS_DIR", str(reports))
+
+    with TestClient(create_app(tmp_path / "runtime")) as client:
+        response = client.post("/api/v1/analyses", json={"video": str(tmp_path / "nope.mp4")})
+        assert response.status_code == 404
+
+
+def test_a_broken_roster_is_refused_before_any_gpu_time(tmp_path, monkeypatch):
+    reports = tmp_path / "reports"
+    reports.mkdir()
+    monkeypatch.setenv("FI_REPORTS_DIR", str(reports))
+    video = tmp_path / "match.mp4"
+    video.write_bytes(b"not really a video")
+
+    roster = {
+        "name": "Тест",
+        "teams": [
+            {
+                "team": "A",
+                "short": "AAA",
+                "players": {"10": "Ten"},
+                "goalkeepers": ["99"],  # not in the squad
+                "starting_lineup": ["10"],
+            }
+        ],
+    }
+    with TestClient(create_app(tmp_path / "runtime")) as client:
+        response = client.post(
+            "/api/v1/analyses", json={"video": str(video), "roster": roster}
+        )
+        assert response.status_code == 422
+
+
+def test_analyses_are_listed_and_can_be_fetched_by_id(tmp_path, monkeypatch):
+    reports = tmp_path / "reports"
+    reports.mkdir()
+    monkeypatch.setenv("FI_REPORTS_DIR", str(reports))
+    monkeypatch.setenv("FI_CORE_URL", "http://127.0.0.1:9")
+    video = tmp_path / "match.mp4"
+    video.write_bytes(b"not really a video")
+
+    with TestClient(create_app(tmp_path / "runtime")) as client:
+        started = client.post(
+            "/api/v1/analyses", json={"video": str(video), "title": "Проверка"}
+        )
+        assert started.status_code == 202
+        run_id = started.json()["id"]
+        assert client.get(f"/api/v1/analyses/{run_id}").status_code == 200
+        assert any(item["id"] == run_id for item in client.get("/api/v1/analyses").json())
+        assert client.get("/api/v1/analyses/nope").status_code == 404

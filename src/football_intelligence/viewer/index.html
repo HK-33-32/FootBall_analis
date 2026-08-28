@@ -94,6 +94,53 @@
   }
   .hint { margin-top: 34px; color: var(--muted); font-size: 13.5px; max-width: 68ch; }
   a { color: var(--accent); }
+
+  /* --- новый расчёт --- */
+  h2 { font-size: 19px; font-weight: 600; margin: 40px 0 6px; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 20px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 16px;
+  }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field > span { font-family: "IBM Plex Mono", monospace; font-size: 11px;
+    letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  .field small { color: var(--muted); font-size: 12.5px; }
+  input[type=text], textarea, input[type=file] {
+    width: 100%; background: var(--panel-raised); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 7px; padding: 9px 11px;
+    font-family: inherit; font-size: 14px;
+  }
+  textarea { font-family: "IBM Plex Mono", monospace; font-size: 12.5px; resize: vertical;
+    min-height: 128px; line-height: 1.45; }
+  input:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  button.go, button.stop {
+    font: inherit; font-weight: 600; font-size: 14px; padding: 11px 20px;
+    border-radius: 7px; border: 1px solid transparent; cursor: pointer;
+    background: var(--accent); color: var(--accent-ink);
+  }
+  button.stop { background: transparent; color: var(--muted); border-color: var(--line); }
+  button.go[disabled] { opacity: .45; cursor: not-allowed; }
+  .status { font-size: 13px; color: var(--muted); }
+  .status.bad { color: var(--bad); }
+  .status.good { color: var(--ok); }
+
+  .run { display: flex; flex-direction: column; gap: 9px;
+    border-top: 1px solid var(--line); padding-top: 16px; }
+  .run .top { display: flex; flex-wrap: wrap; gap: 6px 14px;
+    align-items: baseline; justify-content: space-between; }
+  .run .name { font-weight: 600; }
+  .run .eta { font-family: "IBM Plex Mono", monospace; font-size: 13px; color: var(--accent); }
+  .track { height: 10px; border-radius: 3px; background: var(--panel-raised);
+    border: 1px solid var(--line); overflow: hidden; }
+  .track i { display: block; height: 100%; background: var(--accent);
+    transition: width .4s ease; }
+  .run .meta { display: flex; flex-wrap: wrap; gap: 4px 16px;
+    font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--muted); }
+  .run.done .track i { background: var(--ok); }
+  .run.error .track i, .run.canceled .track i { background: var(--bad); }
+  .run.done .eta { color: var(--ok); }
+  .run.error .eta, .run.canceled .eta { color: var(--bad); }
 </style>
 </head>
 <body>
@@ -110,9 +157,46 @@
 
   <div class="list" id="list"></div>
 
-  <p class="hint">Витрина только показывает готовое. Чтобы разобрать новый матч, запустите
-    <code>scripts/run_long_match.py</code> — он обращается к контейнеру перцепции и требует видеокарты.
-    Результат появится здесь после обновления страницы.</p>
+  <h2>Новый матч</h2>
+  <div class="panel">
+    <label class="field">
+      <span>Запись матча</span>
+      <input type="file" id="video" accept="video/*">
+      <small>Файл загружается в сервис. Анализируются только фрагменты, на которых видно поле.</small>
+    </label>
+
+    <label class="field">
+      <span>Название</span>
+      <input type="text" id="title" placeholder="Аргентина — Франция, финал">
+    </label>
+
+    <label class="field">
+      <span>Составы, JSON</span>
+      <textarea id="roster" spellcheck="false" placeholder='{
+  "name": "Финал",
+  "teams": [
+    {"team": "Аргентина", "short": "ARG",
+     "players": {"10": "Messi", "9": "Álvarez"},
+     "goalkeepers": ["23"],
+     "starting_lineup": ["23", "10", "9"]}
+  ]
+}'></textarea>
+      <small>Можно вставить текстом или выбрать файл. Состав проверяется до запуска: номер
+        вратаря обязан быть в заявке, а стартовый состав — не длиннее одиннадцати.</small>
+      <input type="file" id="rosterFile" accept="application/json,.json">
+    </label>
+
+    <div class="row">
+      <button type="button" class="go" id="start" disabled>Запустить расчёт</button>
+      <span class="status" id="formStatus">Проверяю контейнер перцепции…</span>
+    </div>
+
+    <div id="runs"></div>
+  </div>
+
+  <p class="hint">Расчёт идёт в контейнере перцепции и занимает примерно 24 секунды на каждую
+    секунду футбола. Оценка времени внизу сначала берётся из этой цифры, а после первого куска —
+    из скорости, которую машина показывает на этой записи.</p>
 </div>
 
 <script>
@@ -175,6 +259,147 @@ fetch('/api/v1/reports').then(r => r.json()).then(reports => {
 }).catch(err => {
   list.innerHTML = '<div class="empty">Не удалось получить список отчётов: ' + err + '</div>';
 });
+
+/* ----------------------------------------------------------- новый расчёт */
+const videoInput = document.getElementById('video');
+const titleInput = document.getElementById('title');
+const rosterInput = document.getElementById('roster');
+const rosterFile = document.getElementById('rosterFile');
+const startButton = document.getElementById('start');
+const formStatus = document.getElementById('formStatus');
+const runsHolder = document.getElementById('runs');
+
+const say = (text, kind) => {
+  formStatus.textContent = text;
+  formStatus.className = 'status' + (kind ? ' ' + kind : '');
+};
+
+const humanTime = (seconds) => {
+  if (seconds == null) return '—';
+  if (seconds < 90) return Math.round(seconds) + ' с';
+  const minutes = seconds / 60;
+  if (minutes < 90) return Math.round(minutes) + ' мин';
+  const hours = Math.floor(minutes / 60);
+  return hours + ' ч ' + Math.round(minutes - hours * 60) + ' мин';
+};
+
+let backendReady = false;
+fetch('/api/v1/analysis/backend').then(r => r.json()).then(info => {
+  backendReady = info.reachable && info.reports_writable;
+  if (!info.reachable) {
+    say('Контейнер перцепции недоступен по адресу ' + info.core_url +
+        ' — запустите его, чтобы считать новые матчи.', 'bad');
+  } else if (!info.reports_writable) {
+    say('Каталог отчётов смонтирован только для чтения — расчёт не сможет записать результат.', 'bad');
+  } else {
+    say('Готов к расчёту.', 'good');
+  }
+  startButton.disabled = !backendReady;
+}).catch(() => {
+  say('Сервис не отвечает.', 'bad');
+});
+
+rosterFile.addEventListener('change', async () => {
+  const file = rosterFile.files[0];
+  if (!file) return;
+  rosterInput.value = await file.text();
+  say('Состав загружен из файла.', 'good');
+});
+
+function readRoster() {
+  const text = rosterInput.value.trim();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    throw new Error('состав — не JSON: ' + err.message);
+  }
+}
+
+startButton.addEventListener('click', async () => {
+  const file = videoInput.files[0];
+  if (!file) { say('Сначала выберите запись матча.', 'bad'); return; }
+  let roster = null;
+  try { roster = readRoster(); } catch (err) { say(err.message, 'bad'); return; }
+
+  startButton.disabled = true;
+  try {
+    say('Загружаю запись (' + (file.size / 1e6).toFixed(0) + ' МБ)…');
+    const form = new FormData();
+    form.append('file', file);
+    const uploaded = await fetch('/api/v1/uploads', { method: 'POST', body: form });
+    if (!uploaded.ok) throw new Error(await uploaded.text());
+    const info = await uploaded.json();
+
+    say('Запускаю расчёт…');
+    const response = await fetch('/api/v1/analyses', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        video: info.path,
+        title: titleInput.value.trim() || file.name,
+        roster,
+      }),
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.detail ? JSON.stringify(payload.detail) : 'не удалось запустить');
+    }
+    say('Расчёт идёт. Страницу можно закрыть — он не остановится.', 'good');
+    pollRuns();
+  } catch (err) {
+    say(String(err.message || err), 'bad');
+  } finally {
+    startButton.disabled = !backendReady;
+  }
+});
+
+function paintRun(run) {
+  const node = document.createElement('div');
+  node.className = 'run ' + run.stage;
+  const percent = Math.round(run.fraction * 100);
+  const meta = [];
+  if (run.duration_s) {
+    meta.push('футбола ' + Math.round(run.playable_s) + ' с из ' + Math.round(run.duration_s) + ' с');
+  }
+  if (run.chunks_total) meta.push('кусок ' + run.chunks_done + '/' + run.chunks_total);
+  meta.push('идёт ' + humanTime(run.elapsed_s));
+  if (run.rate_measured) meta.push(run.rate.toFixed(1) + '× реального времени');
+  const done = run.stage === 'done';
+  node.innerHTML =
+    '<div class="top">' +
+      '<span class="name"></span>' +
+      '<span class="eta"></span>' +
+    '</div>' +
+    '<div class="track"><i style="width:' + percent + '%"></i></div>' +
+    '<div class="meta"></div>';
+  node.querySelector('.name').textContent = run.title + ' — ' + run.stage_title;
+  node.querySelector('.eta').textContent = done
+    ? 'готово за ' + humanTime(run.elapsed_s)
+    : (run.stage === 'error' || run.stage === 'canceled'
+        ? run.stage_title
+        : 'осталось ~' + humanTime(run.eta_s));
+  node.querySelector('.meta').textContent = meta.join(' · ') +
+    (run.message ? ' · ' + run.message : '');
+  if (done) {
+    const link = document.createElement('a');
+    link.href = '/matches/' + run.id;
+    link.textContent = 'открыть матч →';
+    node.appendChild(link);
+  }
+  return node;
+}
+
+let pollTimer = null;
+async function pollRuns() {
+  const runs = await fetch('/api/v1/analyses').then(r => r.json()).catch(() => []);
+  runsHolder.innerHTML = '';
+  runs.forEach(run => runsHolder.appendChild(paintRun(run)));
+  const active = runs.some(r => !['done', 'error', 'canceled'].includes(r.stage));
+  clearTimeout(pollTimer);
+  pollTimer = setTimeout(pollRuns, active ? 2000 : 15000);
+}
+pollRuns();
 </script>
 </body>
 </html>

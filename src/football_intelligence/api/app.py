@@ -16,8 +16,9 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
+from ..analysis import AnalysisConfig, AnalysisManager, CoreClient
 from ..cache import InferenceCache
 from ..config import load_config
 from ..events import ActiveSemanticEngine, ReanalysisConfig
@@ -168,6 +169,17 @@ class JobManager:
                 key=lambda row: row["created_at"],
                 reverse=True,
             )
+
+
+class AnalysisRequest(BaseModel):
+    """What starting a calculation needs. Declared here rather than inside the
+    app factory: with postponed annotations FastAPI resolves the type by name
+    against the module, and a class defined in a function is not there -- it
+    silently becomes a query parameter instead of the body."""
+
+    video: str
+    title: str = ""
+    roster: dict[str, Any] | None = None
 
 
 def _read_json(path: str) -> dict:
@@ -376,11 +388,83 @@ def create_app(data_dir: str | Path | None = None) -> FastAPI:
     reports_root = Path(os.environ.get("FI_REPORTS_DIR", root / "reports"))
     application.state.reports_root = reports_root
 
+    analysis_config = AnalysisConfig(
+        core_url=os.environ.get("FI_CORE_URL", "http://host.docker.internal:8000"),
+        media_dir=Path(os.environ.get("FI_MEDIA_DIR", "/data/perception_benchmark/media")),
+        media_container_root=os.environ.get("FI_MEDIA_CONTAINER_ROOT", "/data/media"),
+        reports_dir=reports_root,
+        fps=int(os.environ.get("FI_ANALYSIS_FPS", "25")),
+        chunk_s=float(os.environ.get("FI_CHUNK_SECONDS", "60")),
+    )
+    analyses = AnalysisManager(analysis_config)
+    application.state.analyses = analyses
+
     def _require_report(report_id: str) -> library.Report:
         found = library.find(reports_root, report_id)
         if found is None:
             raise HTTPException(404, "no such match report")
         return found
+
+    @application.get("/api/v1/analysis/backend")
+    def analysis_backend() -> dict[str, Any]:
+        """Whether a calculation can be started at all, and where it would run."""
+        client = CoreClient(analysis_config.core_url)
+        return {
+            "core_url": analysis_config.core_url,
+            "reachable": client.healthy(),
+            "reports_writable": os.access(reports_root, os.W_OK),
+            "media_dir": str(analysis_config.media_dir),
+            "chunk_s": analysis_config.chunk_s,
+        }
+
+    @application.post("/api/v1/analyses", status_code=202)
+    def start_analysis(request: AnalysisRequest) -> dict[str, Any]:
+        video = Path(request.video)
+        if not video.is_file():
+            raise HTTPException(404, f"видеофайл не найден: {video}")
+        if not os.access(reports_root, os.W_OK):
+            raise HTTPException(
+                409,
+                f"каталог отчётов {reports_root} только для чтения — "
+                "смонтируйте его на запись, чтобы запускать расчёт",
+            )
+        roster = None
+        if request.roster:
+            # validated the same way a saved roster is, so a typo is refused
+            # here rather than halfway through an hour of GPU
+            try:
+                checked = MatchRoster.model_validate(request.roster)
+            except ValidationError as exc:
+                # pydantic's own error objects are not JSON: keep the part a
+                # person needs, which is where it went wrong and why
+                problems = [
+                    {"field": ".".join(str(part) for part in item["loc"]), "problem": item["msg"]}
+                    for item in exc.errors(include_url=False)
+                ]
+                raise HTTPException(422, problems) from exc
+            roster_store.save(checked)
+            roster = checked.model_dump()
+        analysis = analyses.submit(video, request.title, roster)
+        return analysis.as_dict()
+
+    @application.get("/api/v1/analyses")
+    def list_analyses() -> list[dict[str, Any]]:
+        return analyses.list()
+
+    @application.get("/api/v1/analyses/{analysis_id}")
+    def get_analysis(analysis_id: str) -> dict[str, Any]:
+        analysis = analyses.get(analysis_id)
+        if analysis is None:
+            raise HTTPException(404, "нет такого расчёта")
+        return analysis.as_dict()
+
+    @application.post("/api/v1/analyses/{analysis_id}/cancel")
+    def cancel_analysis(analysis_id: str) -> dict[str, Any]:
+        analysis = analyses.get(analysis_id)
+        if analysis is None:
+            raise HTTPException(404, "нет такого расчёта")
+        analysis.cancel()
+        return analysis.as_dict()
 
     @application.get("/api/v1/reports")
     def list_reports() -> list[dict[str, Any]]:

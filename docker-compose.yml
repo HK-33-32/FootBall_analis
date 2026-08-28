@@ -10,11 +10,19 @@ services:
     volumes:
       - ./data:/data
       # finished matches: one directory per match, holding match_report.json
-      # and the clip it came from. Read-only -- the viewer only shows them.
-      - "${FI_REPORTS:-./runs}:/reports:ro"
+      # and the clip it came from. Writable, because the service now runs the
+      # analysis as well as showing it; mount it :ro for a viewer-only setup.
+      - "${FI_REPORTS:-./runs}:/reports"
     environment:
       FI_DATA_DIR: /data/runtime
       FI_REPORTS_DIR: /reports
+      # the perception container, as this one sees it. It is started outside
+      # this compose file, so it is reached through the host.
+      FI_CORE_URL: "${FI_CORE_URL:-http://host.docker.internal:8000}"
+      # a directory both containers can see: written here, read there
+      FI_MEDIA_DIR: /data/perception_benchmark/media
+      FI_MEDIA_CONTAINER_ROOT: "${FI_MEDIA_CONTAINER_ROOT:-/data/media}"
+      FI_CHUNK_SECONDS: "${FI_CHUNK_SECONDS:-60}"
       FI_CONFIG: /app/configs/local_16gb.yaml
       FI_PERCEPTION_URL: "${FI_PERCEPTION_URL:-}"
       FI_PERCEPTION_API_KEY: "${FI_PERCEPTION_API_KEY:-}"
@@ -22,6 +30,8 @@ services:
       FI_VLM_MODEL: "${FI_VLM_MODEL:-Qwen/Qwen3-VL-8B-Instruct}"
       FI_VLM_REVISION: "${FI_VLM_REVISION:-a115a837cf3cbba4b697aa74b609721b5009ed41}"
       FI_VLM_API_KEY: "${FI_VLM_API_KEY:-EMPTY}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
   perception:

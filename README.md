@@ -119,6 +119,33 @@ python scripts\roster_check.py `
   --predictions runs\user_arg_fra_clip\predictions_refined.json
 ```
 
+### Starting a match from the browser
+
+`docker compose up -d --build api`, then `http://localhost:8080`: pick a video,
+paste the squads as JSON, press the button. The service uploads the file, runs
+the whole pipeline -- screening, chunked perception against the container,
+refinement, statistics and events -- and the finished match appears in the list
+above the form.
+
+The squad JSON is validated before anything starts, by the same model a saved
+roster goes through: a goalkeeper number that is not in the squad, or a starting
+eleven with twelve names in it, comes back as a message rather than as a
+surprise an hour into a GPU run.
+
+The progress bar is built on what the job actually costs. Screening measures how
+much of the footage is football -- not the length of the file -- and the estimate
+starts from a measured 24x real time. Every chunk then reports its own pace, and
+the remaining time is re-derived from the rate this machine is achieving on this
+video: on the test clip the estimate opened at 3 minutes and the run took 3
+minutes at 21.7x. The bar never retreats, which needs saying because the
+backend restarts its own progress for each of its stages.
+
+Two things worth knowing. The reports directory is now mounted writable, since
+the service writes into it; mount it `:ro` for a viewer-only deployment and the
+launch button will say so instead of failing. And the list of runs lives in
+memory: restarting the container loses the progress list, though finished
+matches survive as matches.
+
 ### Events
 
 The report carries passes, tackles, interceptions, shots, goals, assists and
