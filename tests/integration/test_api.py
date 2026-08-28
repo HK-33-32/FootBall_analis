@@ -30,3 +30,66 @@ def test_bundled_roster_can_be_loaded_and_custom_roster_is_validated(tmp_path):
         roster["teams"][0]["goalkeepers"] = ["99"]
         invalid = client.post("/api/v1/rosters", json=roster)
         assert invalid.status_code == 422
+
+
+def _match_on_disk(root, name="qatar-final"):
+    import json
+
+    directory = root / name
+    directory.mkdir(parents=True)
+    (directory / "match_report.json").write_text(
+        json.dumps(
+            {
+                "title": "Аргентина — Франция",
+                "clip_frames": 750,
+                "frames_with_game_state": 250,
+                "players": [{"track": 1}],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (directory / "clip_web.mp4").write_bytes(b"\x00\x01video bytes")
+    return directory
+
+
+def test_the_viewer_lists_serves_and_streams_a_mounted_match(tmp_path, monkeypatch):
+    reports = tmp_path / "reports"
+    _match_on_disk(reports)
+    monkeypatch.setenv("FI_REPORTS_DIR", str(reports))
+
+    with TestClient(create_app(tmp_path / "runtime")) as client:
+        listed = client.get("/api/v1/reports").json()
+        assert [item["id"] for item in listed] == ["qatar-final"]
+        assert listed[0]["title"] == "Аргентина — Франция"
+        assert listed[0]["has_video"] is True
+
+        page = client.get("/matches/qatar-final")
+        assert page.status_code == 200
+        assert "__MATCH_DATA__" not in page.text
+        assert "/api/v1/reports/qatar-final/video" in page.text
+        assert "<title>Аргентина — Франция</title>" in page.text
+
+        # the clip streams, and it answers range requests so seeking works
+        ranged = client.get(
+            "/api/v1/reports/qatar-final/video", headers={"Range": "bytes=2-6"}
+        )
+        assert ranged.status_code == 206
+        assert ranged.content == b"video"
+
+
+def test_an_unknown_or_unsafe_match_id_is_refused(tmp_path, monkeypatch):
+    reports = tmp_path / "reports"
+    _match_on_disk(reports)
+    monkeypatch.setenv("FI_REPORTS_DIR", str(reports))
+
+    with TestClient(create_app(tmp_path / "runtime")) as client:
+        assert client.get("/matches/does-not-exist").status_code == 404
+        assert client.get("/api/v1/reports/..%2F..%2Fetc/video").status_code == 404
+
+
+def test_the_older_lab_frontend_is_still_reachable(tmp_path):
+    with TestClient(create_app(tmp_path)) as client:
+        lab = client.get("/lab")
+        assert lab.status_code == 200
+        assert "EVIDENCE LAB" in lab.text

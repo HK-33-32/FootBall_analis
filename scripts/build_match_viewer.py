@@ -1,4 +1,10 @@
-"""Render a self-contained match viewer around one match report."""
+"""Render a self-contained match viewer around one match report.
+
+The clip becomes a data URI, which is what makes the page portable and also
+what makes it far larger than the clip. For watching a match on your own
+machine, `football-intelligence serve` renders the same template with the video
+streamed instead -- see `football_intelligence.viewer.library`.
+"""
 
 from __future__ import annotations
 
@@ -6,16 +12,14 @@ import argparse
 import base64
 import json
 import mimetypes
+import sys
 from pathlib import Path
 
-TEMPLATE = (
-    Path(__file__).resolve().parents[1]
-    / "src"
-    / "football_intelligence"
-    / "viewer"
-    / "template.html"
-)
-PLACEHOLDER = "__MATCH_DATA__"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+from football_intelligence.viewer import library  # noqa: E402
+
+TEMPLATE = library.TEMPLATE_PATH
 
 
 def main() -> None:
@@ -37,24 +41,16 @@ def main() -> None:
 
     report = json.loads(args.report.read_text(encoding="utf-8"))
     template = args.template.read_text(encoding="utf-8")
-    if PLACEHOLDER not in template:
-        raise SystemExit(f"{args.template} has no {PLACEHOLDER} placeholder")
-
-    # The payload lands inside a <script type="application/json"> block, so the
-    # only sequence that could close it early is an embedded "</script>".
-    payload = json.dumps(report, ensure_ascii=False, separators=(",", ":")).replace(
-        "</", "<\\/"
-    )
     video_uri = ""
     if args.video:
         mime = mimetypes.guess_type(args.video.name)[0] or "video/mp4"
         encoded = base64.b64encode(args.video.read_bytes()).decode("ascii")
         video_uri = f"data:{mime};base64,{encoded}"
-    html = template.replace(PLACEHOLDER, payload).replace("__VIDEO_SRC__", video_uri)
-    if args.page_title:
-        html = html.replace(
-            "<title>Pitch Telemetry</title>", f"<title>{args.page_title}</title>", 1
-        )
+    try:
+        html = library.render(report, video_uri, template=template, title=args.page_title)
+    except ValueError as exc:
+        raise SystemExit(f"{args.template}: {exc}") from exc
+
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(html, encoding="utf-8")
     size_mb = args.output.stat().st_size / 1e6

@@ -9,8 +9,12 @@ services:
       - "${FI_PORT:-8080}:8080"
     volumes:
       - ./data:/data
+      # finished matches: one directory per match, holding match_report.json
+      # and the clip it came from. Read-only -- the viewer only shows them.
+      - "${FI_REPORTS:-./runs}:/reports:ro"
     environment:
       FI_DATA_DIR: /data/runtime
+      FI_REPORTS_DIR: /reports
       FI_CONFIG: /app/configs/local_16gb.yaml
       FI_PERCEPTION_URL: "${FI_PERCEPTION_URL:-}"
       FI_PERCEPTION_API_KEY: "${FI_PERCEPTION_API_KEY:-}"

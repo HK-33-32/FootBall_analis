@@ -119,6 +119,33 @@ python scripts\roster_check.py `
   --predictions runs\user_arg_fra_clip\predictions_refined.json
 ```
 
+### The viewer as a service
+
+`build_match_viewer.py` bakes the clip into the page as a data URI, which is
+what makes a single file portable and also what makes it thirty times larger
+than the clip. To watch a match on your own machine, run the container instead:
+it renders the same template with the video streamed, so the page is a couple
+of hundred kilobytes rather than ten megabytes, and seeking works.
+
+```powershell
+docker compose up -d --build api
+```
+
+Then open `http://localhost:8080`. Every directory under `runs/` that holds a
+`match_report.json` is listed; the clip beside it (`clip_web.mp4`, or any video
+that is not an `annotated_*` diagnostic render) is streamed behind the
+telemetry. Point the viewer somewhere else with `FI_REPORTS`, and move the port
+with `FI_PORT`:
+
+```powershell
+$env:FI_REPORTS="D:\matches"; $env:FI_PORT="9000"; docker compose up -d api
+```
+
+The reports directory is mounted read-only -- the viewer shows finished work
+and never writes to it. Analysing a new match still runs on the host, since it
+needs the perception container and a GPU. The older evidence lab, which drives
+the job-level pipeline, stays at `/lab`.
+
 To look at a result rather than a number, `scripts/render_annotated_clip.py`
 draws both outputs side by side over a shared pitch minimap that carries the
 annotation as hollow markers:

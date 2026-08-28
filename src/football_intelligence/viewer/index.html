@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Разобранные матчи</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --ground: #0e1113;
+    --panel: #171b1e;
+    --panel-raised: #1e2427;
+    --line: #2a3238;
+    --ink: #e8edef;
+    --ink-dim: #b3c0c6;
+    --muted: #8a9aa3;
+    --accent: #f2c14e;
+    --accent-ink: #131313;
+    --ok: #6cc08b;
+    --bad: #e86a5c;
+    --shadow: 0 1px 0 rgba(255,255,255,.03), 0 12px 32px rgba(0,0,0,.45);
+    --radius: 10px;
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --ground: #f6f6f3; --panel: #ffffff; --panel-raised: #fbfbf9;
+      --line: #d8dcd9; --ink: #14181a; --ink-dim: #3c464b; --muted: #5e6b72;
+      --accent: #a86e00; --accent-ink: #ffffff; --ok: #2f7d52; --bad: #cc4433;
+      --shadow: 0 1px 2px rgba(20,24,26,.05), 0 10px 28px rgba(20,24,26,.08);
+      color-scheme: light;
+    }
+  }
+  :root[data-theme="light"] {
+    --ground: #f6f6f3; --panel: #ffffff; --panel-raised: #fbfbf9;
+    --line: #d8dcd9; --ink: #14181a; --ink-dim: #3c464b; --muted: #5e6b72;
+    --accent: #a86e00; --accent-ink: #ffffff; --ok: #2f7d52; --bad: #cc4433;
+    --shadow: 0 1px 2px rgba(20,24,26,.05), 0 10px 28px rgba(20,24,26,.08);
+    color-scheme: light;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: Archivo, -apple-system, "Segoe UI", sans-serif;
+    font-size: 15px; line-height: 1.55; -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 48px 20px 88px; }
+  header { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end;
+           justify-content: space-between; margin-bottom: 8px; }
+  .eyebrow { font-family: "IBM Plex Mono", monospace; font-size: 11px;
+             letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
+  h1 { margin: 6px 0 0; font-size: 30px; font-weight: 700; letter-spacing: -.01em; }
+  .sub { color: var(--muted); margin: 10px 0 28px; max-width: 62ch; }
+
+  .health { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--muted);
+            display: flex; align-items: center; gap: 8px; }
+  .pip { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .pip.ok { background: var(--ok); }
+  .pip.bad { background: var(--bad); }
+
+  .list { display: flex; flex-direction: column; gap: 10px; }
+  .match {
+    display: grid; grid-template-columns: 1fr auto; gap: 6px 20px; align-items: center;
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 16px 18px; box-shadow: var(--shadow);
+    color: inherit; text-decoration: none;
+  }
+  .match:hover, .match:focus-visible { border-color: var(--accent); outline: none; }
+  .match .name { font-size: 17px; font-weight: 600; }
+  .match .id { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--muted); }
+  .facts { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px 18px;
+           font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--ink-dim); }
+  .facts span b { color: var(--muted); font-weight: 400; }
+  .go { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--accent);
+        white-space: nowrap; }
+  .novideo { color: var(--muted); }
+
+  .empty {
+    border: 1px dashed var(--line); border-radius: var(--radius);
+    padding: 28px 22px; color: var(--muted); background: var(--panel);
+  }
+  .empty code, .hint code {
+    font-family: "IBM Plex Mono", monospace; font-size: 12.5px;
+    background: var(--panel-raised); border: 1px solid var(--line);
+    border-radius: 5px; padding: 1px 6px; color: var(--ink-dim);
+  }
+  .empty pre {
+    margin: 14px 0 0; padding: 14px 16px; overflow-x: auto;
+    background: var(--panel-raised); border: 1px solid var(--line); border-radius: 8px;
+    font-family: "IBM Plex Mono", monospace; font-size: 12.5px; color: var(--ink-dim);
+  }
+  .hint { margin-top: 34px; color: var(--muted); font-size: 13.5px; max-width: 68ch; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <div class="eyebrow">Football Intelligence</div>
+      <h1>Разобранные матчи</h1>
+    </div>
+    <div class="health" id="health"><span class="pip"></span><span id="healthText">проверка…</span></div>
+  </header>
+  <p class="sub">Каждая запись — готовый отчёт из смонтированного каталога. Видео отдаётся потоком,
+    поэтому перемотка работает, а страница не весит сотни мегабайт.</p>
+
+  <div class="list" id="list"></div>
+
+  <p class="hint">Витрина только показывает готовое. Чтобы разобрать новый матч, запустите
+    <code>scripts/run_long_match.py</code> — он обращается к контейнеру перцепции и требует видеокарты.
+    Результат появится здесь после обновления страницы.</p>
+</div>
+
+<script>
+const list = document.getElementById('list');
+const pip = document.querySelector('#health .pip');
+const healthText = document.getElementById('healthText');
+
+const plural = (n, one, few, many) => {
+  const a = Math.abs(n) % 100, b = a % 10;
+  if (a > 10 && a < 20) return many;
+  if (b > 1 && b < 5) return few;
+  return b === 1 ? one : many;
+};
+
+fetch('/api/v1/health').then(r => r.json()).then(h => {
+  pip.classList.add('ok');
+  healthText.textContent = 'сервис ' + (h.version || 'ok');
+}).catch(() => {
+  pip.classList.add('bad');
+  healthText.textContent = 'сервис недоступен';
+});
+
+fetch('/api/v1/reports').then(r => r.json()).then(reports => {
+  if (!reports.length) {
+    list.innerHTML = `<div class="empty">
+      <b>Отчётов пока нет.</b> Каталог с результатами монтируется в контейнер как <code>/reports</code>.
+      Внутри ожидается по папке на матч, а в ней — <code>match_report.json</code> и клип
+      <code>clip_web.mp4</code> рядом.
+      <pre>runs/
+  qatar_final/
+    match_report.json
+    clip_web.mp4</pre>
+    </div>`;
+    return;
+  }
+  for (const item of reports) {
+    const card = document.createElement('a');
+    card.className = 'match';
+    card.href = '/matches/' + encodeURIComponent(item.id);
+    const share = item.frames ? Math.round(100 * item.covered / item.frames) : 0;
+    card.innerHTML = `
+      <div>
+        <div class="name"></div>
+        <div class="id"></div>
+      </div>
+      <div class="go">открыть →</div>
+      <div class="facts">
+        <span><b>игроков</b> ${item.players}</span>
+        <span><b>кадров с состоянием</b> ${item.covered} из ${item.frames} (${share}%)</span>
+        <span class="${item.has_video ? '' : 'novideo'}">${item.has_video
+          ? '<b>видео</b> есть'
+          : 'без видео — только телеметрия'}</span>
+      </div>`;
+    card.querySelector('.name').textContent = item.title;
+    card.querySelector('.id').textContent = item.id;
+    list.append(card);
+  }
+  const n = reports.length;
+  healthText.textContent += ' · ' + n + ' ' + plural(n, 'матч', 'матча', 'матчей');
+}).catch(err => {
+  list.innerHTML = '<div class="empty">Не удалось получить список отчётов: ' + err + '</div>';
+});
+</script>
+</body>
+</html>

@@ -14,7 +14,7 @@ from typing import Annotated, Any
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, model_validator
 
@@ -26,6 +26,7 @@ from ..memory import MatchMemory
 from ..perception import LegacyCoreClient
 from ..pipeline import MatchPipeline
 from ..rosters import MatchRoster, RosterStore, install_bundled_rosters
+from ..viewer import library
 from ..vlm import OpenAICompatibleVLM
 
 
@@ -369,7 +370,52 @@ def create_app(data_dir: str | Path | None = None) -> FastAPI:
             raise HTTPException(404, "source media is no longer available")
         return FileResponse(source)
 
+    # ------------------------------------------------------------- viewer
+    # Finished matches are read from a mounted directory rather than baked into
+    # a page: the clip streams, so seeking works and the page stays small.
+    reports_root = Path(os.environ.get("FI_REPORTS_DIR", root / "reports"))
+    application.state.reports_root = reports_root
+
+    def _require_report(report_id: str) -> library.Report:
+        found = library.find(reports_root, report_id)
+        if found is None:
+            raise HTTPException(404, "no such match report")
+        return found
+
+    @application.get("/api/v1/reports")
+    def list_reports() -> list[dict[str, Any]]:
+        return [item.as_dict() for item in library.discover(reports_root)]
+
+    @application.get("/api/v1/reports/{report_id}")
+    def get_report(report_id: str) -> dict[str, Any]:
+        return json.loads(_require_report(report_id).path.read_text(encoding="utf-8"))
+
+    @application.get("/api/v1/reports/{report_id}/video")
+    def report_video(report_id: str):
+        found = _require_report(report_id)
+        if found.video is None:
+            raise HTTPException(404, "this match has no clip beside its report")
+        return FileResponse(found.video)
+
+    @application.get("/matches/{report_id}", response_class=HTMLResponse)
+    def match_viewer(report_id: str) -> HTMLResponse:
+        found = _require_report(report_id)
+        report = json.loads(found.path.read_text(encoding="utf-8"))
+        video = f"/api/v1/reports/{report_id}/video" if found.video else ""
+        return HTMLResponse(library.render(report, video, title=found.title))
+
+    viewer_dir = Path(library.TEMPLATE_PATH).parent
     static = Path(__file__).parent / "static"
+
+    @application.get("/", response_class=HTMLResponse)
+    def match_library() -> HTMLResponse:
+        return HTMLResponse((viewer_dir / "index.html").read_text(encoding="utf-8"))
+
+    @application.get("/lab", response_class=HTMLResponse)
+    def evidence_lab() -> HTMLResponse:
+        """The older debugging frontend, kept for the job-level pipeline."""
+        return HTMLResponse((static / "index.html").read_text(encoding="utf-8"))
+
     application.mount("/", StaticFiles(directory=static, html=True), name="frontend")
     return application
 
