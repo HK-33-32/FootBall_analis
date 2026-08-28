@@ -238,8 +238,10 @@
     color: var(--muted); cursor: pointer; user-select: none;
   }
   thead th:hover { color: var(--ink); }
-  thead th[aria-sort]::after { content: " &darr;"; color: var(--accent); }
-  thead th[aria-sort="ascending"]::after { content: " &uarr;"; }
+  /* CSS content is a string, not markup: an HTML entity here would be printed
+     literally, and uppercased into "&DARR;" by the rule above. */
+  thead th[aria-sort]::after { content: " ↓"; color: var(--accent); }
+  thead th[aria-sort="ascending"]::after { content: " ↑"; }
   tbody tr { cursor: pointer; }
   tbody tr:hover, tbody tr.on { background: var(--panel-raised); }
   tbody tr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
@@ -260,6 +262,27 @@
   .heat { width: 100%; height: auto; display: block; border-radius: 6px; background: var(--grass); }
   .segments { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
   .seglist { display: flex; flex-wrap: wrap; gap: 6px; }
+
+  /* --- события --- */
+  .eventlist { display: flex; flex-direction: column; gap: 6px; }
+  .event {
+    display: grid; grid-template-columns: 74px 118px 1fr; gap: 14px; align-items: baseline;
+    background: var(--panel-raised); border: 1px solid var(--line-soft);
+    border-left: 3px solid var(--line); border-radius: 7px;
+    padding: 9px 12px; text-align: left; width: 100%; cursor: pointer;
+    color: inherit; font: inherit;
+  }
+  .event:hover, .event:focus-visible { border-color: var(--accent); outline: none; }
+  .event.left { border-left-color: var(--team-left); }
+  .event.right { border-left-color: var(--team-right); }
+  .event .at { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--muted); }
+  .event .what { font-weight: 600; font-size: 13.5px; }
+  .event .who { font-size: 13px; color: var(--ink-dim); }
+  .event .who em { color: var(--muted); font-style: normal; font-size: 12px; }
+  .event.goal .what { color: var(--accent); }
+  .event.stoppage { border-left-color: var(--official); }
+  .event.stoppage .what, .event.card .what { color: var(--official); }
+  .eventcounts { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-bottom: 12px; }
   .seg {
     font-family: "IBM Plex Mono", monospace; font-size: 11.5px;
     padding: 4px 9px; border-radius: 5px; border: 1px solid var(--line);
@@ -392,6 +415,11 @@
     <section class="card">
       <h2>Команды</h2>
       <div class="teams" id="teams"></div>
+    </section>
+
+    <section class="card" id="eventscard" hidden>
+      <h2>События <span class="label" id="eventnote"></span></h2>
+      <div class="eventlist" id="eventlist"></div>
     </section>
 
     <section class="card">
@@ -539,6 +567,9 @@
     [DATA.ball ? DATA.ball.top_speed_kmh + " км/ч" : "&mdash;", "быстрейший мяч"],
     [DATA.ball ? DATA.ball.kept + "/" + DATA.ball.observed : "&mdash;", "точек мяча оставлено"],
     [(DATA.possession_flow || {}).turnovers ?? "&mdash;", "смен владения"],
+    ...(DATA.scoreboard
+      ? [[DATA.scoreboard.left + ":" + DATA.scoreboard.right, "счёт на табло"]]
+      : []),
   ].map(([value, name]) => `<div class="fact"><b>${value}</b><span>${name}</span></div>`).join("");
 
   document.getElementById("stagenote").textContent =
@@ -758,7 +789,20 @@
     { key: "average_speed_kmh", label: "Средняя, км/ч" },
     { key: "sprintcount", label: "Спринты", sort: (p) => p.sprints.length },
     { key: "time_nearest_ball_s", label: "У мяча, с" },
+    { key: "ev_passes", label: "Пасы", sort: (p) => ev(p).passes,
+      cell: (p) => ev(p).passes ? `${ev(p).passes_completed}/${ev(p).passes}` : "—" },
+    { key: "ev_tackles", label: "Отборы", sort: (p) => ev(p).tackles },
+    { key: "ev_interceptions", label: "Перехваты", sort: (p) => ev(p).interceptions },
+    { key: "ev_shots", label: "Удары", sort: (p) => ev(p).shots,
+      cell: (p) => ev(p).shots ? `${ev(p).shots_on_target}/${ev(p).shots}` : "—" },
+    { key: "ev_goals", label: "Голы", sort: (p) => ev(p).goals },
+    { key: "ev_assists", label: "Пас+", sort: (p) => ev(p).assists },
   ];
+  const NO_EVENTS = { touches: 0, passes: 0, passes_completed: 0, passes_received: 0,
+    progressive_passes: 0, passes_into_final_third: 0, losses: 0, interceptions: 0,
+    tackles: 0, dispossessed: 0, shots: 0, shots_on_target: 0, goals: 0, assists: 0,
+    carries: 0, carry_distance_m: 0, possession_time_s: 0, pass_accuracy: null };
+  const ev = (player) => player.events || NO_EVENTS;
   let sortKey = "time_on_camera_s", sortAsc = false;
   document.getElementById("head").innerHTML = columns
     .map((c) => `<th data-key="${c.key}" scope="col">${c.label}</th>`).join("");
@@ -806,6 +850,68 @@
     }));
     g.globalAlpha = 1;
     pitchLines(g, width, height, 2);
+  }
+
+  /* ---------------------------------------------------------------- события */
+  const EVENT_NAMES = {
+    pass: "Пас", tackle: "Отбор", interception: "Перехват", shot: "Удар",
+    goal: "ГОЛ", assist: "Голевая передача", carry: "Ведение",
+    stoppage: "Остановка", card: "Карточка",
+  };
+  const kitOf = (identity) => {
+    const player = players.find((p) => p.identity === identity);
+    return player && player.jersey ? "#" + player.jersey : "id " + identity;
+  };
+
+  function paintEvents() {
+    const list = DATA.events || [];
+    const card = document.getElementById("eventscard");
+    if (!list.length) return;
+    card.hidden = false;
+    const counts = DATA.event_counts || {};
+    document.getElementById("eventnote").textContent =
+      Object.entries(counts).map(([k, v]) => (EVENT_NAMES[k] || k) + " " + v).join(" · ");
+    const holder = document.getElementById("eventlist");
+    holder.innerHTML = "";
+    for (const item of list) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "event " + (item.team || "") + " " + item.kind;
+      const detail = [];
+      if (item.kind === "pass" || item.kind === "interception" || item.kind === "tackle") {
+        detail.push(kitOf(item.from) + " → " + kitOf(item.to));
+        if (item.distance_m != null) detail.push("<em>" + item.distance_m + " м</em>");
+      } else if (item.kind === "shot") {
+        detail.push(kitOf(item.player));
+        detail.push("<em>" + (item.on_target ? "в створ" : "мимо") +
+          ", " + item.ball_speed_kmh + " км/ч</em>");
+      } else if (item.kind === "carry") {
+        detail.push(kitOf(item.player));
+        detail.push("<em>" + item.distance_m + " м за " + item.duration_s + " с</em>");
+      } else if (item.player != null) {
+        detail.push(kitOf(item.player));
+      }
+      if (item.kind === "goal") {
+        detail.push("<em>подтверждён: " +
+          (item.confirmed_by === "score" ? "счётом на табло" : "положением мяча") + "</em>");
+      }
+      if (item.kind === "stoppage") {
+        detail.push("мяч стоит " + item.duration_s + " с");
+        detail.push("<em>судья в " + item.referee_distance_m + " м — возможен фол</em>");
+      }
+      if (item.kind === "card") {
+        detail.push(item.colour === "red" ? "красная" : "жёлтая");
+        detail.push("<em>прочитано моделью, проверьте вручную</em>");
+      }
+      if (item.progressive) detail.push("<em>вперёд</em>");
+      if (item.into_final_third) detail.push("<em>в финальную треть</em>");
+      button.innerHTML =
+        `<span class="at">${item.timecode}</span>` +
+        `<span class="what">${EVENT_NAMES[item.kind] || item.kind}</span>` +
+        `<span class="who">${detail.join(" ")}</span>`;
+      button.addEventListener("click", () => seekTo(item.frame));
+      holder.appendChild(button);
+    }
   }
 
   function segChips(list, className) {
@@ -913,7 +1019,13 @@
         <td>${player.top_speed_kmh.toFixed(1)}</td>
         <td>${player.average_speed_kmh.toFixed(1)}</td>
         <td>${player.sprints.length}</td>
-        <td>${player.time_nearest_ball_s.toFixed(1)}</td>`;
+        <td>${player.time_nearest_ball_s.toFixed(1)}</td>
+        <td>${ev(player).passes ? `${ev(player).passes_completed}/${ev(player).passes}` : "—"}</td>
+        <td>${ev(player).tackles || "—"}</td>
+        <td>${ev(player).interceptions || "—"}</td>
+        <td>${ev(player).shots ? `${ev(player).shots_on_target}/${ev(player).shots}` : "—"}</td>
+        <td>${ev(player).goals || "—"}</td>
+        <td>${ev(player).assists || "—"}</td>`;
       const toggle = () => { openId = openId === player.identity ? null : player.identity; paintTable(); };
       tr.addEventListener("click", toggle);
       tr.addEventListener("keydown", (event) => {
@@ -1266,6 +1378,7 @@
   window.addEventListener("resize", drawCoverage);
   drawCoverage();
   paintTable();
+  paintEvents();
   paintSquads();
   paintCommands();
   refresh(0);

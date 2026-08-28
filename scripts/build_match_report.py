@@ -33,6 +33,20 @@ def main() -> None:
     parser.add_argument("--roster", type=Path, default=None)
     parser.add_argument("--no-timeline", action="store_true")
     parser.add_argument(
+        "--score-timeline",
+        type=Path,
+        default=None,
+        help="scoreboard readings, as written by scripts/read_scoreboard.py. When given "
+        "it decides which goals are real: a ball passing behind the net looks the same "
+        "from one camera, and the score does not.",
+    )
+    parser.add_argument(
+        "--cards",
+        type=Path,
+        default=None,
+        help="cards read by scripts/read_cards.py at the stoppages this report found",
+    )
+    parser.add_argument(
         "--keep-uncalibrated",
         action="store_true",
         help="publish positions from frames whose homography fails its sanity tests",
@@ -45,7 +59,21 @@ def main() -> None:
         predictions, calibration = drop_uncalibrated(predictions, CalibrationConfig())
     stats_config = StatsConfig(fps=args.fps)
     trajectory_config = TrajectoryConfig(fps=args.fps)
-    report = match_statistics(predictions, stats_config, trajectory_config)
+    score_timeline = None
+    if args.score_timeline and args.score_timeline.is_file():
+        payload = json.loads(args.score_timeline.read_text(encoding="utf-8"))
+        score_timeline = payload["readings"] if isinstance(payload, dict) else payload
+    cards = None
+    if args.cards and args.cards.is_file():
+        payload = json.loads(args.cards.read_text(encoding="utf-8"))
+        cards = payload["cards"] if isinstance(payload, dict) else payload
+    report = match_statistics(
+        predictions,
+        stats_config,
+        trajectory_config,
+        score_timeline=score_timeline,
+        cards=cards,
+    )
     report["title"] = args.title or args.predictions.parent.name
     report["calibration"] = {
         key: value for key, value in calibration.items() if key != "rejected"
@@ -101,6 +129,14 @@ def main() -> None:
         f"{report['ball']['observed']} kept, {calibration.get('frames_rejected', 0)} frames "
         f"dropped as uncalibrated -> {args.output} ({size_kb:.0f} KB)"
     )
+    counts = report.get("event_counts") or {}
+    if counts:
+        print(
+            "events: "
+            + ", ".join(f"{name} {value}" for name, value in counts.items())
+            + f" | score {report['score']['left']}:{report['score']['right']}"
+            f" ({report['score_source']})"
+        )
 
 
 if __name__ == "__main__":

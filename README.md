@@ -119,6 +119,35 @@ python scripts\roster_check.py `
   --predictions runs\user_arg_fra_clip\predictions_refined.json
 ```
 
+### Events
+
+The report carries passes, tackles, interceptions, shots, goals, assists and
+carries, all derived from the chain of possession spells, with per-player and
+per-team tallies beside the movement numbers. Two rules keep it football rather
+than noise: a touch has to last a fifth of a second, and possession traded
+repeatedly between the same two players inside a second and a half is one duel.
+
+Goals are the one thing a single camera cannot settle, so the scoreboard
+settles them. `read_scoreboard.py` has the container's VLM read the graphic and
+makes the series monotonic; with `--score-timeline` the board decides which
+goals are real, including deciding that none were.
+
+```powershell
+python scripts\read_scoreboard.py --video match.mp4 `
+  --output runs\qatar_final\score_timeline.json --every-s 5
+python scripts\build_match_report.py `
+  --predictions runs\qatar_final\predictions_refined.json `
+  --output runs\qatar_final\match_report.json `
+  --score-timeline runs\qatar_final\score_timeline.json
+```
+
+Fouls are reported as candidates, not facts: stretches where the ball sat still
+with an official standing over it. Reading the card itself was measured and does
+not work on this footage -- the Qatar 2022 officials wore yellow and the model
+says "yellow" regardless -- so `read_cards.py` prints a warning, and a verified
+list can be fed to `build_match_report.py --cards` instead. `ACCURACY.md` has
+the measurements.
+
 ### The viewer as a service
 
 `build_match_viewer.py` bakes the clip into the page as a data URI, which is

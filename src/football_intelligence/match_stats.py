@@ -24,6 +24,7 @@ from typing import Any
 import numpy as np
 
 from .gamestate import PLAYER_ROLES, Detection
+from .match_events import EventConfig, Tally, detect_events
 from .trajectories import (
     TrajectoryConfig,
     clean_ball_track,
@@ -261,39 +262,15 @@ def _team_shape(
     return shape
 
 
-def _turnovers(
-    nearest: dict[int, list[int]], sides: dict[int, str | None], config: StatsConfig
-) -> dict[str, Any]:
-    """How often the ball changed teams, and how long each spell lasted."""
-    owner_at: dict[int, str] = {}
-    for track, frames in nearest.items():
-        side = sides.get(track)
-        if side not in ("left", "right"):
-            continue
-        for frame in frames:
-            owner_at[frame] = side
-    spells: list[tuple[str, int, int]] = []
-    for frame in sorted(owner_at):
-        side = owner_at[frame]
-        if spells and spells[-1][0] == side and frame - spells[-1][2] <= config.segment_gap_frames:
-            spells[-1] = (side, spells[-1][1], frame)
-        else:
-            spells.append((side, frame, frame))
-    durations = [(end - start + 1) / config.fps for _, start, end in spells]
-    return {
-        "spells": len(spells),
-        "turnovers": max(0, len(spells) - 1),
-        "median_spell_s": round(float(np.median(durations)), 2) if durations else 0.0,
-        "longest_spell_s": round(max(durations), 2) if durations else 0.0,
-    }
-
-
 def match_statistics(
     predictions: Sequence[Detection],
     config: StatsConfig | None = None,
     trajectory_config: TrajectoryConfig | None = None,
+    event_config: EventConfig | None = None,
+    score_timeline: list[dict[str, Any]] | None = None,
+    cards: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Per-identity statistics plus the ball track and team totals."""
+    """Per-identity statistics, the ball track, team totals and match events."""
     config = config or StatsConfig()
     trajectory_config = trajectory_config or TrajectoryConfig(fps=config.fps)
 
@@ -343,6 +320,15 @@ def match_statistics(
             continue
         for frame, point in zip(track_frames, track_points, strict=True):
             outfield_at[frame].append((track, point))
+
+    # Officials are kept out of possession but are exactly who has to be near
+    # a stopped ball for it to look like a foul.
+    referee_at: dict[int, list[tuple[float, float]]] = defaultdict(list)
+    for track, (track_frames, track_points) in cleaned.items():
+        if roles[track].most_common(1)[0][0] != "referee":
+            continue
+        for frame, point in zip(track_frames, track_points, strict=True):
+            referee_at[frame].append(point)
 
     nearest: dict[int, list[int]] = defaultdict(list)
     for frame, ball_point in ball_at.items():
@@ -432,7 +418,23 @@ def match_statistics(
     ball_top_speed = max(ball_speeds, default=0.0)
 
     shape = _team_shape(outfield_at, sides, config)
-    possession_flow = _turnovers(nearest, sides, config)
+
+    # Events read the same possession chain the numbers above are built on, so
+    # a pass and the second of possession it came from cannot disagree.
+    events = detect_events(
+        dict(nearest),
+        sides,
+        ball_track,
+        {frame: dict(entries) for frame, entries in outfield_at.items()},
+        event_config or EventConfig(fps=config.fps),
+        score_timeline=score_timeline,
+        referee_at=referee_at,
+        cards=cards,
+    )
+    for player in players:
+        player["events"] = events["by_player"].get(
+            str(player["identity"]), Tally().as_dict()
+        )
 
     team_totals: dict[str, Any] = {}
     for side in ("left", "right"):
@@ -451,6 +453,7 @@ def match_statistics(
             "decelerations": sum(player["decelerations"] for player in members),
             "distance_by_zone_m": zones,
             "shape": shape.get(side, {}),
+            "events": events["by_team"].get(side, {}),
         }
     contested = sum(entry["time_nearest_ball_s"] for entry in team_totals.values())
     for side in team_totals:
@@ -482,7 +485,13 @@ def match_statistics(
             ),
         },
         "teams": team_totals,
-        "possession_flow": possession_flow,
+        "possession_flow": events["possession_flow"],
+        "events": events["events"],
+        "stoppages": events["stoppages"],
+        "event_counts": events["counts"],
+        "score": events["score"],
+        "scoreboard": events["scoreboard"],
+        "score_source": events["score_source"],
         "ball_tracked_share": round(len(ball_at) / max(len(all_frames), 1), 4),
         "players": players,
         "thresholds": {
@@ -496,6 +505,7 @@ def match_statistics(
                 name: [round(low * 3.6, 1), round(high * 3.6, 1)]
                 for name, low, high in config.speed_zones
             },
+            **events["thresholds"],
         },
     }
 

@@ -421,6 +421,79 @@ concurrently and finish together, so there is little to win in either without
 the other. The changes live in the ``football-core`` source tree, with the
 originals kept beside them in ``optim_backup/``.
 
+### Events, and what a single camera can and cannot settle
+
+The report now carries events, all of them derived from one sequence: the chain
+of possession spells. A **pass** is the ball moving to a team-mate; an
+**interception** is the same movement ending at an opponent who was nowhere
+near the passer; a **tackle** is possession changing hands while the two
+players were close enough to have contested it. That last distinction is a
+distance, not a guess, and it is the only thing separating a defender who read
+the play from one who won the ball in a challenge.
+
+Per player the report counts touches, passes and passes completed, passes
+received, progressive passes and passes into the final third, losses,
+interceptions, tackles, times dispossessed, shots and shots on target, goals,
+assists, carries and the metres carried. Per team, the same totals.
+
+Two things the possession chain needed before any of it read as football.
+
+*Ownership flickers.* Two players contesting a loose ball are each nearest to
+it on alternating frames. Taken literally that is a tackle every other frame:
+on the broadcast clip it produced seven events, six of which were the same two
+duels. A touch now has to last a fifth of a second before it counts.
+
+*A duel is one event.* Even debounced, players wrestling over a ball trade it
+several times before it settles. Changes between the same pair inside a second
+and a half are one contest. The clip went from 7 events to 4: a tackle, an
+interception, a 12.6 m pass and an 11.1 m carry, which is what is actually on
+the tape.
+
+Possession flow is computed off that same chain, so the page cannot report nine
+turnovers above a list holding one.
+
+### Goals, and why the scoreboard decides
+
+A goal is the one event a single camera cannot settle. A ball passing behind
+the net looks identical to one crossing the line, and the tracker usually loses
+the ball at exactly the moment it matters. The broadcast already carries the
+answer in its scoreboard graphic, and the perception container already has a
+model that can read it.
+
+`scripts/read_scoreboard.py` samples frames, has Qwen2.5-VL read the score, and
+makes the series monotonic -- a score cannot fall, so a misread frame is
+dropped rather than inventing a goal, and a change has to be confirmed by a
+second frame before it counts, dated to the frame it was first seen. On the
+broadcast clip it read **8 of 8 frames correctly at 1-0**, which is the true
+score at that point of the 2022 final.
+
+With a timeline supplied the scoreboard decides, including when it says nothing
+happened: the clip contains no goal, and the report says so while still
+reporting the standing 1-0. Without one, the ball position is used and the
+result is labelled as such.
+
+### Fouls and cards: one works, one does not
+
+A foul is not visible in tracking; its consequence is. Play stops, the ball
+sits still, and the referee walks over. `find_stoppages` marks stretches where
+the ball moved under 1 m/s for at least 1.6 s with an official within 12 m --
+candidates for a human to look at, and honestly labelled as such, since a
+throw-in, a substitution and a booking are indistinguishable from here.
+
+Reading the card itself was tried and **does not work on this footage**. At
+Qatar 2022 the officials wore yellow. Asked whether a referee was showing a
+card, Qwen2.5-VL answered "yellow" on two of three frames of open play with no
+card in them -- and still did after the prompt was tightened to describe a
+raised rectangular card, and again on crops tightened to the referee himself.
+The kit is the yellow it sees. The script is kept, with that measurement in its
+docstring and a warning it prints at startup, and the supported path is feeding
+a verified list to `build_match_report.py --cards`. Nothing about the stoppage
+candidates depends on it.
+
+The ceiling on all of this is the ball. Every event needs it, and on the
+broadcast clip the ball is tracked in 83% of the frames that have a game state
+at all.
+
 ### Bounded, resumable jobs
 
 `football_intelligence.longmatch` cuts the playable stretches into chunks of
