@@ -1,0 +1,107 @@
+"""Build the single JSON a match viewer needs: statistics plus playback timeline."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+from football_intelligence.calibration import (  # noqa: E402
+    CalibrationConfig,
+    drop_uncalibrated,
+)
+from football_intelligence.match_stats import (  # noqa: E402
+    StatsConfig,
+    match_statistics,
+    timeline,
+)
+from football_intelligence.trajectories import (  # noqa: E402
+    TrajectoryConfig,
+    clean_ball_track,
+)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--predictions", required=True, type=Path)
+    parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--title", default="")
+    parser.add_argument("--fps", type=float, default=25.0)
+    parser.add_argument("--roster", type=Path, default=None)
+    parser.add_argument("--no-timeline", action="store_true")
+    parser.add_argument(
+        "--keep-uncalibrated",
+        action="store_true",
+        help="publish positions from frames whose homography fails its sanity tests",
+    )
+    args = parser.parse_args()
+
+    predictions = json.loads(args.predictions.read_text(encoding="utf-8"))["predictions"]
+    calibration = {"frames_rejected": 0}
+    if not args.keep_uncalibrated:
+        predictions, calibration = drop_uncalibrated(predictions, CalibrationConfig())
+    stats_config = StatsConfig(fps=args.fps)
+    trajectory_config = TrajectoryConfig(fps=args.fps)
+    report = match_statistics(predictions, stats_config, trajectory_config)
+    report["title"] = args.title or args.predictions.parent.name
+    report["calibration"] = {
+        key: value for key, value in calibration.items() if key != "rejected"
+    }
+    report["source"] = str(args.predictions)
+
+    if args.roster and args.roster.is_file():
+        roster = json.loads(args.roster.read_text(encoding="utf-8"))
+        report["roster"] = {
+            "name": roster.get("name"),
+            "teams": [
+                {
+                    "team": team["team"],
+                    "short": team.get("short"),
+                    "players": team.get("players") or {},
+                    "starting_lineup": team.get("starting_lineup") or [],
+                }
+                for team in roster.get("teams", [])
+            ],
+        }
+
+    if not args.no_timeline:
+        ball = [
+            (
+                int(detection["frame"]),
+                (
+                    float(detection["bbox_pitch"]["x_bottom_middle"]),
+                    float(detection["bbox_pitch"]["y_bottom_middle"]),
+                ),
+            )
+            for detection in predictions
+            if (detection.get("attributes") or {}).get("role") == "ball"
+            and (detection.get("bbox_pitch") or {}).get("x_bottom_middle") is not None
+        ]
+        track = clean_ball_track(ball, trajectory_config)
+        report["timeline"] = timeline(predictions, track["frames"], track["points"])
+        report["identities"] = {
+            str(player["identity"]): {
+                "team": player["team"],
+                "role": player["role"],
+                "jersey": player["jersey"],
+            }
+            for player in report["players"]
+        }
+
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
+    size_kb = args.output.stat().st_size / 1024
+    print(
+        f"{report['title']}: {len(report['players'])} identities, "
+        f"{report['frames_with_game_state']} frames with game state "
+        f"({report['coverage']:.0%} of the clip), ball {report['ball']['kept']}/"
+        f"{report['ball']['observed']} kept, {calibration.get('frames_rejected', 0)} frames "
+        f"dropped as uncalibrated -> {args.output} ({size_kb:.0f} KB)"
+    )
+
+
+if __name__ == "__main__":
+    main()

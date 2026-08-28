@@ -9,6 +9,7 @@ from football_intelligence.gamestate import (
     JerseyTally,
     RefinementConfig,
     TrackSummary,
+    _cluster_kits,
     assign_teams,
     demote_stranded_goalkeepers,
     link_tracklets,
@@ -154,6 +155,40 @@ def test_kits_cluster_by_colour_not_by_how_brightly_lit_the_player_is():
 
     assert clusters(0.0) == {frozenset({1, 2}), frozenset({3, 4})}
     assert clusters(1.0) != {frozenset({1, 2}), frozenset({3, 4})}
+
+
+def test_a_lopsided_chroma_split_is_retried_with_lightness():
+    """Both teams are on the pitch, so a 5-1 split is not a split by kit."""
+    weights = np.array([9.0, 9.0, 9.0, 9.0, 9.0, 9.0])
+    # Chroma alone separates one player from the rest; lightness separates 3/3.
+    descriptors = np.array(
+        [
+            [10.0, 1.0, 1.0],
+            [90.0, 1.2, 0.8],
+            [12.0, 0.9, 1.1],
+            [88.0, 40.0, 40.0],
+            [11.0, 1.1, 0.9],
+            [91.0, 1.0, 1.0],
+        ]
+    )
+    config = RefinementConfig()
+    labels, _, scale, _ = _cluster_kits(descriptors, weights, config)
+    assert scale[0] == 1.0  # the retry was kept
+    assert sorted(np.bincount(labels, minlength=2).tolist()) == [3, 3]
+
+    patient = RefinementConfig(max_kit_mass_share=1.0)
+    labels, _, scale, _ = _cluster_kits(descriptors, weights, patient)
+    assert scale[0] == 0.0  # without the balance rule the lopsided split stands
+    assert sorted(np.bincount(labels, minlength=2).tolist()) == [1, 5]
+
+
+def test_a_balanced_chroma_split_is_left_alone():
+    weights = np.array([9.0, 9.0, 9.0, 9.0])
+    descriptors = np.array(
+        [[10.0, 40.0, 5.0], [80.0, 41.0, 6.0], [12.0, 5.0, 40.0], [78.0, 6.0, 41.0]]
+    )
+    _, _, scale, _ = _cluster_kits(descriptors, weights, RefinementConfig())
+    assert scale[0] == 0.0
 
 
 def test_assign_teams_reports_insufficient_evidence_without_crops():

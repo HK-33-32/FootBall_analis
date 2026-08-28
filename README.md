@@ -95,6 +95,30 @@ python scripts\attribute_report.py --sequence SNGS-033 `
   --predictions runs\soccernet_valid_sngs033_core\predictions_refined.json
 ```
 
+`scripts/build_match_report.py` turns a refined game state into per-player
+telemetry -- distance, speeds, sprints, thirds, time nearest the ball -- each
+figure carrying the timecodes it came from, and
+`scripts/build_match_viewer.py` wraps that report in a self-contained viewer:
+the footage itself with nothing drawn on it, a coverage strip that shows where
+the broadcast cut away from the pitch, and a sortable player table that opens a
+heatmap and timecoded segments. Pass `--video` to embed a clip as a data URI --
+keep it small, since the whole page has to fit the artifact size limit.
+
+```powershell
+python scripts\build_match_report.py `
+  --predictions runs\user_arg_fra_clip\predictions_refined.json `
+  --output runs\user_arg_fra_clip\match_report.json `
+  --roster data\runtime\rosters\roster-42e2a800400c.json
+python scripts\build_match_viewer.py `
+  --report runs\user_arg_fra_clip\match_report.json `
+  --page-title "Qatar Final Telemetry" `
+  --video runs\user_arg_fra_clip\clip_web.mp4 `
+  --output runs\user_arg_fra_clip\viewer.html
+python scripts\roster_check.py `
+  --roster data\runtime\rosters\roster-42e2a800400c.json `
+  --predictions runs\user_arg_fra_clip\predictions_refined.json
+```
+
 To look at a result rather than a number, `scripts/render_annotated_clip.py`
 draws both outputs side by side over a shared pitch minimap that carries the
 annotation as hollow markers:
@@ -120,6 +144,50 @@ This implementation does not claim SOTA accuracy: the published challenge-set
 state of the art is GS-HOTA 63.81 (2024) / 63.90 (2025) on a different split.
 See `ACCURACY.md` for the full tables, ablations, tuning caveats and
 provenance, and `runs/gamestate_benchmark.json` for raw output.
+
+### Full-length matches
+
+Perception costs fourteen to twenty-four times real time here, on an RTX 5080
+Laptop. It used to cost forty-four to eighty-two: the GPU sat at 6-10%
+utilisation because the pipeline was serial, calling the networks once per
+frame and preparing their crops on one core. Batching those calls and spreading
+the preparation over the pool made the same predictions arrive 3.5x to 5.7x
+sooner -- byte for byte the same, so no accuracy was traded for it. `ACCURACY.md`
+has the measurements; the changes are in the `football-core` source tree. `scripts/run_long_match.py` makes that tractable without
+touching the model. `football_intelligence.playability` scans the decoded video
+on the CPU at 21x real time and keeps only the stretches that show a pitch --
+measured on broadcast footage it discards 42% of the running time while keeping
+100% of the frames that actually produced a game state, since replays, dugout
+shots and close-ups cannot produce one anyway.
+`football_intelligence.longmatch` then cuts what survives into chunks of at most
+a minute, rebases each chunk onto the match clock and gives it a private
+track-id range, so a failure costs one chunk and a rerun skips whatever is
+already on disk.
+
+Run end to end on the broadcast clip -- three chunks, merged, refined and
+reported -- this produces the same football as a single pass over the whole
+clip (263 frames with a game state against 250, team distances 238.6/115.5 m
+against 254.8/118.9 m) while sending 42% less footage to the GPU.
+
+```powershell
+python scripts\run_long_match.py --video match.mp4 --name qatar-final `
+  --output-dir runs\qatar_final --plan-only
+python scripts\run_long_match.py --video match.mp4 --name qatar-final `
+  --output-dir runs\qatar_final --chunk-s 60
+```
+
+The analysis side had its own scaling problem: the trajectory filter compared
+every detection with every earlier one, which projected to about twelve hours
+for a full match. Bounding the lookback to what a body could physically have
+reached, and cleaning each stretch of a track separately instead of keeping one
+longest chain, brings that to roughly twenty seconds and makes it linear.
+
+The report now carries, per player, distance and time in five speed zones,
+accelerations and decelerations with a peak, the timecode of top speed, the
+area worked in, and the number of separate episodes nearest the ball; per team,
+those totals plus shape -- width, depth, compactness and line height measured
+towards the goal that team attacks -- and possession flow with spells,
+turnovers and spell lengths. The viewer renders all of it in Russian.
 
 ---
 

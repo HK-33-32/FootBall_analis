@@ -1,0 +1,1273 @@
+<meta charset="utf-8">
+<title>Pitch Telemetry</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* Тёмная тема — основная. Светлая переопределяется ниже дважды:
+     под системную настройку и под явное переключение. */
+  :root {
+    --ground: #0e1113;
+    --panel: #171b1e;
+    --panel-raised: #1e2427;
+    --line: #2a3238;
+    --line-soft: #212829;
+    --ink: #e8edef;
+    --ink-dim: #b3c0c6;
+    --muted: #8a9aa3;
+    --team-left: #4ca8e0;
+    --team-right: #e86a5c;
+    --official: #d8b24a;
+    --ball: #f2c14e;
+    --accent: #f2c14e;
+    --accent-ink: #131313;
+    --grass: #223034;
+    --shadow: 0 1px 0 rgba(255, 255, 255, .03), 0 12px 32px rgba(0, 0, 0, .45);
+    --radius: 10px;
+    color-scheme: dark;
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --ground: #f6f6f3;
+      --panel: #ffffff;
+      --panel-raised: #fbfbf9;
+      --line: #d8dcd9;
+      --line-soft: #e8ebe8;
+      --ink: #14181a;
+      --ink-dim: #3c464b;
+      --muted: #5e6b72;
+      --team-left: #1f78b4;
+      --team-right: #cc4433;
+      --official: #a37b13;
+      --ball: #b47b09;
+      --accent: #a86e00;
+      --accent-ink: #ffffff;
+      --grass: #eef1ec;
+      --shadow: 0 1px 2px rgba(20, 24, 26, .05), 0 10px 28px rgba(20, 24, 26, .08);
+      color-scheme: light;
+    }
+  }
+
+  :root[data-theme="light"] {
+    --ground: #f6f6f3;
+    --panel: #ffffff;
+    --panel-raised: #fbfbf9;
+    --line: #d8dcd9;
+    --line-soft: #e8ebe8;
+    --ink: #14181a;
+    --ink-dim: #3c464b;
+    --muted: #5e6b72;
+    --team-left: #1f78b4;
+    --team-right: #cc4433;
+    --official: #a37b13;
+    --ball: #b47b09;
+    --accent: #a86e00;
+    --accent-ink: #ffffff;
+    --grass: #eef1ec;
+    --shadow: 0 1px 2px rgba(20, 24, 26, .05), 0 10px 28px rgba(20, 24, 26, .08);
+    color-scheme: light;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: Archivo, "Helvetica Neue", Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .shell {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 32px 24px 72px;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+
+  .label {
+    font-size: 11px; font-weight: 600; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--muted);
+  }
+
+  .mono { font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+  header { display: flex; flex-direction: column; gap: 16px; }
+
+  .titlebar {
+    display: flex; align-items: flex-end; justify-content: space-between;
+    gap: 20px; flex-wrap: wrap;
+  }
+
+  h1 {
+    margin: 0; font-size: clamp(27px, 3.8vw, 40px); font-weight: 700;
+    letter-spacing: -.02em; text-wrap: balance;
+  }
+
+  .subtitle { margin: 6px 0 0; color: var(--muted); max-width: 64ch; }
+
+  .facts {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(136px, 1fr));
+    gap: 1px; background: var(--line-soft);
+    border: 1px solid var(--line-soft); border-radius: var(--radius); overflow: hidden;
+  }
+  .fact { background: var(--panel); padding: 13px 15px; display: flex; flex-direction: column; gap: 3px; }
+  .fact b { font-size: 21px; font-weight: 600; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
+  .fact span { font-size: 11px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+
+  button {
+    font: inherit; color: inherit; cursor: pointer;
+    background: var(--panel-raised); border: 1px solid var(--line);
+    border-radius: 7px; padding: 7px 13px;
+  }
+  button:hover { border-color: var(--muted); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ----------------------------------------------------------------- вкладки */
+  .tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--line-soft); }
+  .tabs button {
+    background: none; border: none; border-bottom: 2px solid transparent;
+    border-radius: 0; padding: 10px 14px; color: var(--muted); font-weight: 600;
+    font-size: 13px;
+  }
+  .tabs button:hover { color: var(--ink); border-color: var(--line); }
+  .tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+
+  .pane { display: flex; flex-direction: column; gap: 28px; }
+  .pane[hidden] { display: none; }
+
+  .card {
+    background: var(--panel); border: 1px solid var(--line-soft);
+    border-radius: var(--radius); box-shadow: var(--shadow);
+  }
+  .card > h2 {
+    margin: 0; padding: 15px 18px;
+    font-size: 12px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--muted); border-bottom: 1px solid var(--line-soft);
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  }
+
+  /* -------------------------------------------------------------------- клип */
+  .stage { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+  .screen {
+    position: relative; width: 100%; border-radius: 6px; overflow: hidden;
+    background: #000; aspect-ratio: 16 / 9;
+  }
+  .screen video { width: 100%; height: 100%; display: block; object-fit: contain; background: #000; }
+  .screen .missing {
+    position: absolute; inset: 0; display: grid; place-items: center;
+    color: var(--muted); font-size: 13.5px; text-align: center; padding: 24px;
+  }
+  /* класс задаёт display, поэтому он же обязан его снимать: иначе [hidden]
+     проигрывает каскад и заглушка ложится поверх играющего видео */
+  .screen .missing[hidden] { display: none; }
+
+  .cut {
+    position: absolute; left: 14px; top: 14px;
+    display: none; align-items: center; gap: 8px;
+    padding: 6px 11px; border-radius: 999px;
+    background: rgba(0, 0, 0, .62); color: #fff;
+    font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+    backdrop-filter: blur(6px);
+  }
+  .cut[data-on="1"] { display: inline-flex; }
+  .cut i { width: 7px; height: 7px; border-radius: 50%; background: #fff; opacity: .75; }
+
+  .transport { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .transport .clock { font-size: 15px; font-variant-numeric: tabular-nums; min-width: 108px; }
+  .transport .spacer { flex: 1; }
+  .play { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; padding: 0; }
+
+  .coverage {
+    position: relative; height: 34px; width: 100%;
+    border: 1px solid var(--line); border-radius: 6px; overflow: hidden;
+    background: var(--panel-raised); cursor: pointer;
+  }
+  .coverage:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .coverage canvas { display: block; width: 100%; height: 100%; }
+  .playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent); pointer-events: none; }
+
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
+  .chip { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); }
+  .swatch-sm { width: 14px; height: 8px; border-radius: 2px; flex: none; }
+
+  .oncam { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; min-height: 28px; }
+  .oncam .empty { color: var(--muted); font-size: 12.5px; }
+  .tag {
+    font-family: "IBM Plex Mono", monospace; font-size: 11.5px;
+    padding: 3px 8px; border-radius: 5px; border: 1px solid transparent;
+    background: var(--panel-raised); color: var(--ink-dim); cursor: pointer;
+  }
+  .tag:hover { border-color: var(--muted); }
+  .tag b { font-weight: 500; }
+  .tag em { font-style: normal; color: var(--muted); margin-left: 5px; font-size: 10.5px; }
+
+  /* ----------------------------------------------------------------- команды */
+  .teams { display: grid; grid-template-columns: 1fr; gap: 1px; background: var(--line-soft); }
+  @media (min-width: 720px) { .teams { grid-template-columns: 1fr 1fr; } }
+  .team { background: var(--panel); padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+  .team-head { display: flex; align-items: center; gap: 10px; }
+  .swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+  .team-name { font-weight: 600; letter-spacing: -.01em; }
+  .team-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .team-grid div { display: flex; flex-direction: column; gap: 2px; }
+  .team-grid b { font-size: 19px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .team-grid span { font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+
+  .bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+  .zones { display: flex; flex-direction: column; gap: 6px; }
+  .zonebar { display: flex; height: 8px; }
+  .zonebar i { display: block; height: 100%; }
+  .zone-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+  .zone-key { font-size: 10.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .bar i { display: block; height: 100%; border-radius: 3px; }
+
+  /* ---------------------------------------------------------------- таблица */
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 10px 12px; white-space: nowrap; border-bottom: 1px solid var(--line-soft); }
+  th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; }
+  thead th {
+    position: sticky; top: 0; z-index: 1; background: var(--panel);
+    font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--muted); cursor: pointer; user-select: none;
+  }
+  thead th:hover { color: var(--ink); }
+  thead th[aria-sort]::after { content: " &darr;"; color: var(--accent); }
+  thead th[aria-sort="ascending"]::after { content: " &uarr;"; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover, tbody tr.on { background: var(--panel-raised); }
+  tbody tr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+  .kit { display: inline-flex; align-items: center; gap: 8px; }
+  .num {
+    min-width: 30px; padding: 2px 6px; border-radius: 5px; text-align: center;
+    font-family: "IBM Plex Mono", monospace; font-size: 12px; font-weight: 500; color: var(--accent-ink);
+  }
+  .num.unknown { background: none; border: 1px dashed var(--line); color: var(--muted); }
+  .role { font-size: 11px; color: var(--muted); }
+  .meter { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+  .meter .bar { width: 54px; }
+
+  .detail td { background: var(--panel-raised); padding: 0; }
+  .detail-inner { display: grid; gap: 22px; padding: 20px 18px; grid-template-columns: 1fr; }
+  @media (min-width: 860px) { .detail-inner { grid-template-columns: 250px 1fr; } }
+  .heat { width: 100%; height: auto; display: block; border-radius: 6px; background: var(--grass); }
+  .segments { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  .seglist { display: flex; flex-wrap: wrap; gap: 6px; }
+  .seg {
+    font-family: "IBM Plex Mono", monospace; font-size: 11.5px;
+    padding: 4px 9px; border-radius: 5px; border: 1px solid var(--line);
+    color: var(--ink-dim); background: var(--panel); white-space: nowrap;
+  }
+  .seg.sprint { border-color: var(--accent); color: var(--accent); }
+  .seg.ball { border-color: var(--ball); color: var(--ball); }
+  .seg button { all: unset; cursor: pointer; }
+  .seg:hover { border-color: var(--muted); }
+  .none { color: var(--muted); font-size: 12.5px; }
+
+  .pairs { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 12px; }
+  .pairs div { display: flex; flex-direction: column; gap: 2px; }
+  .pairs b { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .pairs span { font-size: 10px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+
+  /* --------------------------------------------------------------- методика */
+  .method { padding: 20px 18px; display: flex; flex-direction: column; gap: 14px; }
+  .method p { margin: 0; max-width: 70ch; color: var(--ink-dim); }
+  .method dl { margin: 0; display: grid; gap: 10px; }
+  @media (min-width: 720px) { .method dl { grid-template-columns: 210px 1fr; gap: 10px 20px; } }
+  .method dt { font-weight: 600; font-size: 13px; }
+  .method dd { margin: 0; color: var(--muted); font-size: 13.5px; max-width: 64ch; }
+
+  /* ----------------------------------------------------------- новый расчёт */
+  .form { padding: 20px 18px; display: flex; flex-direction: column; gap: 18px; }
+  .grid2 { display: grid; grid-template-columns: 1fr; gap: 14px; }
+  @media (min-width: 700px) { .grid2 { grid-template-columns: 1fr 1fr; } }
+  .field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+  .field > span { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .field small { color: var(--muted); font-size: 12px; }
+  input, textarea, select {
+    font: inherit; color: var(--ink); background: var(--panel-raised);
+    border: 1px solid var(--line); border-radius: 7px; padding: 8px 11px; width: 100%;
+  }
+  input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  textarea { resize: vertical; font-family: "IBM Plex Mono", monospace; font-size: 12.5px; line-height: 1.55; }
+  input[type="checkbox"] { width: auto; }
+
+  .drop {
+    display: flex; flex-direction: column; gap: 4px; justify-content: center;
+    padding: 18px 16px; min-height: 84px; cursor: pointer;
+    border: 1px dashed var(--line); border-radius: 8px; background: var(--panel-raised);
+  }
+  .drop:hover, .drop.over { border-color: var(--accent); }
+  .drop:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .drop b { font-weight: 500; font-size: 13.5px; overflow-wrap: anywhere; }
+  .drop small { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+  .out { display: flex; flex-direction: column; gap: 8px; }
+  .out-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  pre {
+    margin: 0; padding: 14px 16px; overflow-x: auto;
+    background: var(--panel-raised); border: 1px solid var(--line); border-radius: 8px;
+    font-family: "IBM Plex Mono", monospace; font-size: 12.5px; line-height: 1.65; color: var(--ink-dim);
+  }
+  .note {
+    padding: 13px 15px; border-radius: 8px;
+    border: 1px solid var(--line); border-left: 3px solid var(--accent);
+    background: var(--panel-raised); color: var(--ink-dim); font-size: 13.5px; max-width: 74ch;
+  }
+
+  .squad { display: flex; flex-direction: column; gap: 10px; }
+  .squad-rows { display: flex; flex-direction: column; gap: 6px; }
+  .squad-row { display: grid; grid-template-columns: 74px 1fr 104px 34px; gap: 8px; align-items: center; }
+  .squad-row label { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  .squad-row button { padding: 6px 9px; }
+  .rowhead { font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+
+  footer { color: var(--muted); font-size: 12.5px; display: flex; flex-wrap: wrap; gap: 8px 18px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+  }
+</style>
+
+<div class="shell">
+  <header>
+    <div class="titlebar">
+      <div>
+        <h1 id="title">Телеметрия матча</h1>
+        <p class="subtitle" id="subtitle"></p>
+      </div>
+      <button id="theme" type="button" aria-label="Переключить тему">Тема</button>
+    </div>
+    <div class="facts" id="facts"></div>
+    <div class="tabs" role="tablist">
+      <button role="tab" id="tab-match" aria-controls="pane-match" aria-selected="true" type="button">Матч</button>
+      <button role="tab" id="tab-new" aria-controls="pane-new" aria-selected="false" type="button">Новый расчёт</button>
+    </div>
+  </header>
+
+  <div class="pane" id="pane-match" role="tabpanel" aria-labelledby="tab-match">
+    <section class="card">
+      <h2>Запись <span class="label" id="stagenote"></span></h2>
+      <div class="stage">
+        <div class="screen">
+          <video id="clip" src="__VIDEO_SRC__" playsinline preload="auto"
+                 aria-label="Запись матча без разметки"></video>
+          <div class="missing" id="missing" hidden>
+            Запись не вложена в этот отчёт. Шкала и все цифры ниже всё равно описывают её.
+          </div>
+          <span class="cut" id="cut"><i></i>Камера не на поле</span>
+        </div>
+
+        <div class="transport">
+          <button class="play" id="play" type="button" aria-label="Воспроизвести">
+            <svg width="14" height="16" viewBox="0 0 14 16" aria-hidden="true"><path id="playicon" d="M2 1.5v13l11-6.5z" fill="currentColor"/></svg>
+          </button>
+          <span class="clock mono" id="clock">00:00.000</span>
+          <button id="speed" type="button">1&times;</button>
+          <span class="spacer"></span>
+          <span class="label" id="framenote"></span>
+        </div>
+
+        <div class="coverage" id="coverage" role="slider" tabindex="0"
+             aria-label="Шкала клипа" aria-valuemin="0" aria-valuenow="0" aria-valuemax="100">
+          <canvas id="covcanvas" width="2000" height="68"></canvas>
+          <div class="playhead" id="playhead" style="left:0"></div>
+        </div>
+
+        <div class="legend" id="legend"></div>
+        <div>
+          <span class="label">Отслеживаются сейчас &mdash; номер, затем идентичность</span>
+          <div class="oncam" id="oncam"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Команды</h2>
+      <div class="teams" id="teams"></div>
+    </section>
+
+    <section class="card">
+      <h2>Игроки <span class="label">Клик по строке раскрывает тайм-коды</span></h2>
+      <div class="tablewrap">
+        <table id="table">
+          <thead><tr id="head"></tr></thead>
+          <tbody id="body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Как читать эти цифры</h2>
+      <div class="method">
+        <p id="methodlead"></p>
+        <dl id="method"></dl>
+      </div>
+    </section>
+  </div>
+
+  <div class="pane" id="pane-new" role="tabpanel" aria-labelledby="tab-new" hidden>
+    <section class="card">
+      <h2>Расчёт нового матча</h2>
+      <div class="form">
+        <p class="note">
+          Страница ничего не запускает сама: расчёт идёт на вашей машине, на видеокарте, и занимает
+          около 25 минут на 30 секунд записи. Заполните поля &mdash; ниже соберётся точная
+          последовательность команд, останется скопировать её в терминал в корне репозитория.
+        </p>
+
+        <div class="grid2">
+          <label class="field">
+            <span>Имя клипа</span>
+            <input id="f-seq" value="MATCH-001" spellcheck="false">
+            <small>Латиницей, без пробелов: так называются папки результата.</small>
+          </label>
+          <div class="field">
+            <span>Исходное видео</span>
+            <div class="drop" id="drop" tabindex="0" role="button"
+                 aria-label="Выбрать файл записи">
+              <input type="file" id="f-file" accept="video/*" hidden>
+              <b id="drop-name">Выберите файл или перетащите его сюда</b>
+              <small id="drop-meta">Любой формат, который читает ffmpeg</small>
+            </div>
+          </div>
+          <label class="field">
+            <span>Папка с файлом</span>
+            <input id="f-dir" value="C:ideo" spellcheck="false">
+            <small>Браузер не сообщает страницам полный путь, поэтому папку укажите сами.</small>
+          </label>
+          <label class="field">
+            <span>Длительность, с</span>
+            <input id="f-dur" type="number" min="1" max="600" step="1" value="30">
+            <small>Считается от начала файла.</small>
+          </label>
+          <label class="field">
+            <span>Частота кадров</span>
+            <select id="f-fps">
+              <option value="25" selected>25</option>
+              <option value="30">30</option>
+              <option value="50">50</option>
+            </select>
+            <small>Запись приводится к ней и к 1080p.</small>
+          </label>
+        </div>
+
+        <div class="out">
+          <div class="out-head">
+            <span class="label">Команды для терминала</span>
+            <button id="copy-cmd" type="button">Копировать</button>
+          </div>
+          <pre id="cmd"></pre>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Составы</h2>
+      <div class="form">
+        <p class="note">
+          Заявка нужна для двух вещей: подписать прочитанные номера фамилиями и поймать заведомо
+          невозможные &mdash; номера, которого нет ни в одной заявке, на поле не было. Отметка
+          &laquo;в старте&raquo; отсекает ещё и тех, кто на момент эпизода не выходил.
+        </p>
+        <div class="grid2" id="squads"></div>
+        <div class="out">
+          <div class="out-head">
+            <span class="label">Файл заявки</span>
+            <span style="display:flex;gap:8px">
+              <button id="load-roster" type="button">Взять из отчёта</button>
+              <button id="copy-roster" type="button">Копировать</button>
+            </span>
+          </div>
+          <textarea id="roster-json" rows="12" spellcheck="false" aria-label="Заявка в формате JSON"></textarea>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <footer id="footer"></footer>
+</div>
+
+<script id="match-data" type="application/json">__MATCH_DATA__</script>
+<script>
+(function () {
+  "use strict";
+  const DATA = JSON.parse(document.getElementById("match-data").textContent);
+  const FPS = DATA.fps || 25;
+  const HALF_L = 52.5, HALF_W = 34;
+  const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+  const clock = (seconds) => {
+    const m = Math.floor(seconds / 60);
+    const s = Math.max(0, seconds % 60);
+    return String(m).padStart(2, "0") + ":" + s.toFixed(3).padStart(6, "0");
+  };
+  const teamColour = (team) =>
+    team === "left" ? css("--team-left") : team === "right" ? css("--team-right") : css("--official");
+  const sideName = (side) => (side === "left" ? "слева" : side === "right" ? "справа" : "не определена");
+
+  const frames = (DATA.timeline && DATA.timeline.frames) || [];
+  const people = (DATA.timeline && DATA.timeline.people) || {};
+  const ballAt = (DATA.timeline && DATA.timeline.ball) || {};
+  const identities = DATA.identities || {};
+  const firstFrame = DATA.first_frame || (frames[0] || 0);
+  const lastFrame = DATA.last_frame || (frames[frames.length - 1] || 1);
+  const totalFrames = Math.max(1, lastFrame - firstFrame + 1);
+  const covered = new Set(frames);
+  const duration = totalFrames / FPS;
+
+  /* ----------------------------------------------------------------- шапка */
+  document.getElementById("title").textContent = DATA.title || "Телеметрия матча";
+  document.getElementById("subtitle").textContent =
+    "Запись показана так, как её анализировали, без нарисованных рамок. Все цифры ниже измерены " +
+    "по восстановленному игровому состоянию: эталонной разметки у этого клипа нет.";
+  document.title = DATA.title || "Телеметрия матча";
+
+  const players = (DATA.players || []).filter((p) => p.role !== "referee" || p.time_on_camera_s > 0.5);
+  const outfield = players.filter((p) => p.role !== "referee");
+  document.getElementById("facts").innerHTML = [
+    [outfield.length, "идентичностей"],
+    [Math.round((DATA.coverage || 0) * 100) + "%", "клипа с состоянием"],
+    [duration.toFixed(1) + " с", "длительность"],
+    [DATA.ball ? DATA.ball.top_speed_kmh + " км/ч" : "&mdash;", "быстрейший мяч"],
+    [DATA.ball ? DATA.ball.kept + "/" + DATA.ball.observed : "&mdash;", "точек мяча оставлено"],
+    [(DATA.possession_flow || {}).turnovers ?? "&mdash;", "смен владения"],
+  ].map(([value, name]) => `<div class="fact"><b>${value}</b><span>${name}</span></div>`).join("");
+
+  document.getElementById("stagenote").textContent =
+    frames.length + " из " + totalFrames + " кадров несут игровое состояние";
+  document.getElementById("framenote").textContent = FPS + " кадр/с";
+
+  document.getElementById("legend").innerHTML = [
+    ['<span class="swatch-sm" style="background:var(--line)"></span>', "Состояние есть"],
+    ['<span class="swatch-sm" style="background:var(--ball)"></span>', "Мяч отслежен"],
+    ['<span class="swatch-sm" style="background:var(--panel-raised);border:1px solid var(--line)"></span>',
+      "Состояния нет"],
+  ].map(([mark, text]) => `<span class="chip">${mark}${text}</span>`).join("");
+
+  /* ------------------------------------------------------------------ клип */
+  const video = document.getElementById("clip");
+  const hasVideo = Boolean(video.getAttribute("src"));
+  if (!hasVideo) { video.hidden = true; document.getElementById("missing").hidden = false; }
+
+  let cursor = firstFrame;
+  const frameOf = (seconds) => firstFrame + Math.round(seconds * FPS);
+  const timeOf = (frame) => (frame - firstFrame) / FPS;
+
+  const covCanvas = document.getElementById("covcanvas");
+  function fit(el, ratio) {
+    const width = el.clientWidth || 900;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    el.width = Math.round(width * dpr);
+    el.height = Math.round(width * ratio * dpr);
+    const context = el.getContext("2d");
+    context.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { width: width, height: width * ratio, ctx: context };
+  }
+
+  function drawCoverage() {
+    const height = covCanvas.clientHeight || 32;
+    const { width, ctx: g } = fit(covCanvas, height / (covCanvas.clientWidth || 900));
+    g.clearRect(0, 0, width, height);
+    g.fillStyle = css("--panel-raised");
+    g.fillRect(0, 0, width, height);
+    const step = width / totalFrames;
+    g.fillStyle = css("--line");
+    for (let f = firstFrame; f <= lastFrame; f++) {
+      if (!covered.has(f)) continue;
+      g.fillRect((f - firstFrame) * step, height * 0.30, Math.max(step, 1), height * 0.46);
+    }
+    g.fillStyle = css("--ball");
+    for (const key in ballAt) {
+      g.fillRect((Number(key) - firstFrame) * step, height * 0.06, Math.max(step, 1), height * 0.17);
+    }
+  }
+
+  const onCam = document.getElementById("oncam");
+  function paintOnCam(frame) {
+    const rows = people[frame] || [];
+    if (!rows.length) {
+      onCam.innerHTML = '<span class="empty">Здесь ничего не отслеживается: камера не показывает поле либо калибровка не прошла проверку.</span>';
+      return;
+    }
+    onCam.innerHTML = rows.slice().sort((a, b) => a[0] - b[0]).map((row) => {
+      const meta = identities[row[0]] || {};
+      const label = meta.jersey ? "#" + meta.jersey : meta.role === "referee" ? "суд." : "?";
+      const title = meta.jersey ? "Номер " + meta.jersey : "Номер не прочитан";
+      return `<button class="tag" type="button" data-id="${row[0]}" ` +
+        `title="${title}, идентичность ${row[0]}" style="border-color:${teamColour(meta.team)}">` +
+        `<b style="color:${teamColour(meta.team)}">${label}</b><em>\u00b7 ${row[0]}</em></button>`;
+    }).join("");
+  }
+  onCam.addEventListener("click", (event) => {
+    const tag = event.target.closest(".tag");
+    if (tag) openPlayer(Number(tag.dataset.id));
+  });
+
+  /* ------------------------------------------------------------- транспорт */
+  const playButton = document.getElementById("play");
+  const playIcon = document.getElementById("playicon");
+  const cutBadge = document.getElementById("cut");
+
+  function refresh(seconds) {
+    cursor = Math.min(lastFrame, Math.max(firstFrame, frameOf(seconds)));
+    document.getElementById("clock").textContent = clock(seconds);
+    const pct = Math.min(100, Math.max(0, (seconds / duration) * 100));
+    document.getElementById("playhead").style.left = pct + "%";
+    document.getElementById("coverage").setAttribute("aria-valuenow", Math.round(pct));
+    cutBadge.setAttribute("data-on", covered.has(cursor) ? "0" : "1");
+    paintOnCam(cursor);
+  }
+
+  function setPlaying(value) {
+    playIcon.setAttribute("d", value ? "M2 1.5h3.5v13H2zM8.5 1.5H12v13H8.5z" : "M2 1.5v13l11-6.5z");
+    playButton.setAttribute("aria-label", value ? "Пауза" : "Воспроизвести");
+  }
+
+  let ticking = false;
+  function follow() {
+    if (!hasVideo || video.paused || video.ended) { ticking = false; return; }
+    refresh(video.currentTime);
+    requestAnimationFrame(follow);
+  }
+  function startFollowing() { if (!ticking) { ticking = true; requestAnimationFrame(follow); } }
+
+  playButton.addEventListener("click", () => {
+    if (!hasVideo) return;
+    if (video.paused) video.play(); else video.pause();
+  });
+  video.addEventListener("play", () => { setPlaying(true); startFollowing(); });
+  video.addEventListener("pause", () => setPlaying(false));
+  video.addEventListener("ended", () => { setPlaying(false); refresh(duration); });
+  video.addEventListener("timeupdate", () => { if (video.paused) refresh(video.currentTime); });
+  video.addEventListener("seeked", () => refresh(video.currentTime));
+
+  document.getElementById("speed").addEventListener("click", (event) => {
+    const next = video.playbackRate === 1 ? 0.5 : video.playbackRate === 0.5 ? 0.25 : 1;
+    video.playbackRate = next;
+    event.currentTarget.innerHTML = next + "&times;";
+  });
+
+  function seekSeconds(seconds) {
+    const clamped = Math.min(duration - 0.001, Math.max(0, seconds));
+    if (hasVideo) video.currentTime = clamped;
+    refresh(clamped);
+  }
+  function seekTo(frame) {
+    if (hasVideo) video.pause();
+    seekSeconds(timeOf(frame));
+    document.querySelector(".screen").scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  const strip = document.getElementById("coverage");
+  function seekFromEvent(event) {
+    const box = strip.getBoundingClientRect();
+    const ratio = Math.min(1, Math.max(0, (event.clientX - box.left) / box.width));
+    seekSeconds(ratio * duration);
+  }
+  strip.addEventListener("pointerdown", (event) => {
+    seekFromEvent(event);
+    const move = (e) => seekFromEvent(e);
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  });
+  strip.addEventListener("keydown", (event) => {
+    const step = (event.shiftKey ? 25 : 1) / FPS;
+    const now = hasVideo ? video.currentTime : timeOf(cursor);
+    if (event.key === "ArrowRight") { seekSeconds(now + step); event.preventDefault(); }
+    if (event.key === "ArrowLeft") { seekSeconds(now - step); event.preventDefault(); }
+  });
+
+  /* ---------------------------------------------------------------- команды */
+  const ZONES = [
+    ["walk", "шаг"], ["jog", "трусца"], ["run", "бег"],
+    ["high_intensity", "интенсивно"], ["sprint", "спринт"],
+  ];
+  const ZONE_ALPHA = [0.28, 0.44, 0.62, 0.8, 1];
+
+  const shapeOf = (team, key) => {
+    const shape = team.shape || {};
+    return shape[key] === undefined ? "&mdash;" : shape[key] + " м";
+  };
+
+  function zoneBar(zones) {
+    if (!zones) return "";
+    const total = ZONES.reduce((sum, [key]) => sum + (zones[key] || 0), 0);
+    if (!total) return "";
+    const parts = ZONES.map(([key, label], index) => {
+      const value = zones[key] || 0;
+      if (!value) return "";
+      return `<i title="${label}: ${value} м" style="width:${(value / total) * 100}%;` +
+        `background:currentColor;opacity:${ZONE_ALPHA[index]}"></i>`;
+    }).join("");
+    const legend = ZONES.map(([key, label]) =>
+      `<span class="zone-key">${label} ${Math.round(zones[key] || 0)}</span>`).join("");
+    return `<div class="zones"><div class="bar zonebar">${parts}</div>
+      <div class="zone-legend">${legend}</div></div>`;
+  }
+
+  const teamTotals = DATA.teams || {};
+  document.getElementById("teams").innerHTML = ["left", "right"].map((side) => {
+    const t = teamTotals[side] || {};
+    const share = t.possession_share === null || t.possession_share === undefined
+      ? null : Math.round(t.possession_share * 100);
+    return `<div class="team">
+      <div class="team-head">
+        <span class="swatch" style="background:var(--team-${side})"></span>
+        <span class="team-name">Команда ${sideName(side)}</span>
+      </div>
+      <div class="bar"><i style="width:${share === null ? 0 : share}%;background:var(--team-${side})"></i></div>
+      <div class="team-grid">
+        <div><b>${share === null ? "&mdash;" : share + "%"}</b><span>рядом с мячом</span></div>
+        <div><b>${t.identities || 0}</b><span>идентичностей</span></div>
+        <div><b>${t.distance_m || 0} м</b><span>дистанция</span></div>
+      </div>
+      ${zoneBar(t.distance_by_zone_m)}
+      <div class="team-grid">
+        <div><b>${shapeOf(t, "width_m")}</b><span>ширина</span></div>
+        <div><b>${shapeOf(t, "depth_m")}</b><span>глубина</span></div>
+        <div><b>${shapeOf(t, "compactness_m")}</b><span>компактность</span></div>
+      </div>
+      <div class="team-grid">
+        <div><b>${shapeOf(t, "line_height_m")}</b><span>высота линии</span></div>
+        <div><b>${t.accelerations || 0}</b><span>ускорений</span></div>
+        <div><b>${t.decelerations || 0}</b><span>торможений</span></div>
+      </div>
+    </div>`;
+  }).join("");
+
+  /* ---------------------------------------------------------------- таблица */
+  const columns = [
+    { key: "jersey", label: "Игрок", sort: (p) => Number(p.jersey || 999) },
+    { key: "team", label: "Сторона", sort: (p) => p.team || "zz" },
+    { key: "time_on_camera_s", label: "В кадре, с" },
+    { key: "distance_m", label: "Дистанция, м" },
+    { key: "distance_per_minute_m", label: "м / мин" },
+    { key: "top_speed_kmh", label: "Макс, км/ч" },
+    { key: "average_speed_kmh", label: "Средняя, км/ч" },
+    { key: "sprintcount", label: "Спринты", sort: (p) => p.sprints.length },
+    { key: "time_nearest_ball_s", label: "У мяча, с" },
+  ];
+  let sortKey = "time_on_camera_s", sortAsc = false;
+  document.getElementById("head").innerHTML = columns
+    .map((c) => `<th data-key="${c.key}" scope="col">${c.label}</th>`).join("");
+  const valueOf = (player, column) => (column.sort ? column.sort(player) : player[column.key]);
+
+  function pitchLines(context, width, height, pad) {
+    const sx = (x) => pad + ((x + HALF_L) / (2 * HALF_L)) * (width - 2 * pad);
+    const sy = (y) => pad + ((y + HALF_W) / (2 * HALF_W)) * (height - 2 * pad);
+    const unit = (width - 2 * pad) / (2 * HALF_L);
+    context.strokeStyle = css("--line");
+    context.lineWidth = 1.2;
+    context.strokeRect(sx(-HALF_L), sy(-HALF_W), sx(HALF_L) - sx(-HALF_L), sy(HALF_W) - sy(-HALF_W));
+    context.beginPath();
+    context.moveTo(sx(0), sy(-HALF_W));
+    context.lineTo(sx(0), sy(HALF_W));
+    context.stroke();
+    context.beginPath();
+    context.arc(sx(0), sy(0), 9.15 * unit, 0, Math.PI * 2);
+    context.stroke();
+    [-1, 1].forEach((side) => {
+      context.strokeRect(sx(side * HALF_L), sy(-20.16),
+        sx(side * (HALF_L - 16.5)) - sx(side * HALF_L), sy(20.16) - sy(-20.16));
+      context.strokeRect(sx(side * HALF_L), sy(-9.16),
+        sx(side * (HALF_L - 5.5)) - sx(side * HALF_L), sy(9.16) - sy(-9.16));
+    });
+  }
+
+  function heatCanvas(node, player) {
+    const grid = player.heatmap || [];
+    const rows = grid.length, cols = rows ? grid[0].length : 0;
+    if (!rows || !cols) return;
+    const { width, height, ctx: g } = fit(node, 68 / 105);
+    g.clearRect(0, 0, width, height);
+    g.fillStyle = css("--grass");
+    g.fillRect(0, 0, width, height);
+    let peak = 1;
+    grid.forEach((row) => row.forEach((v) => { peak = Math.max(peak, v); }));
+    const cw = width / cols, ch = height / rows;
+    const colour = teamColour(player.team);
+    grid.forEach((row, r) => row.forEach((v, c) => {
+      if (!v) return;
+      g.globalAlpha = 0.12 + 0.78 * (v / peak);
+      g.fillStyle = colour;
+      g.fillRect(c * cw, r * ch, cw + 0.5, ch + 0.5);
+    }));
+    g.globalAlpha = 1;
+    pitchLines(g, width, height, 2);
+  }
+
+  function segChips(list, className) {
+    if (!list || !list.length) return '<span class="none">не зафиксировано</span>';
+    return list.map((s) => {
+      const extra = s.top_speed_kmh ? " \u00b7 " + s.top_speed_kmh + " км/ч" : "";
+      return `<span class="seg ${className}"><button type="button" data-frame="${s.start_frame}">` +
+        `${s.start_timecode}\u2013${s.end_timecode}${extra}</button></span>`;
+    }).join("");
+  }
+
+  function rosterCandidates(player) {
+    if (!DATA.roster || !player.jersey) return "";
+    const hits = (DATA.roster.teams || []).map((team) => {
+      const name = (team.players || {})[String(player.jersey)];
+      if (!name) return null;
+      const starter = (team.starting_lineup || []).includes(String(player.jersey));
+      return `${name} (${team.short || team.team}${starter ? "" : ", не в старте"})`;
+    }).filter(Boolean);
+    if (!hits.length) return "";
+    return `<div><span class="label">Кто носит #${player.jersey} по заявке</span>
+      <div class="none" style="margin-top:4px">${hits.join(" \u00b7 ")} \u2014 соответствие стороны и команды не проверено</div></div>`;
+  }
+
+  function detailRow(player) {
+    const row = document.createElement("tr");
+    row.className = "detail";
+    const cell = document.createElement("td");
+    cell.colSpan = columns.length;
+    cell.innerHTML = `<div class="detail-inner">
+      <div>
+        <span class="label">Где находился</span>
+        <canvas class="heat" width="600" height="390"></canvas>
+      </div>
+      <div class="segments">
+        <div class="pairs">
+          <div><b>${(player.thirds.defensive * 100).toFixed(0)}%</b><span>своя треть</span></div>
+          <div><b>${(player.thirds.middle * 100).toFixed(0)}%</b><span>середина</span></div>
+          <div><b>${(player.thirds.attacking * 100).toFixed(0)}%</b><span>чужая треть</span></div>
+          <div><b>${player.time_running_s} с</b><span>быстрее ${DATA.thresholds.running_speed_kmh} км/ч</span></div>
+          <div><b>${player.detections}</b><span>детекций</span></div>
+          <div><b>${(player.coverage * 100).toFixed(0)}%</b><span>клипа</span></div>
+          <div><b>${player.accelerations || 0} / ${player.decelerations || 0}</b><span>разгон / торможение</span></div>
+          <div><b>${player.top_speed_at || "&mdash;"}</b><span>пик скорости</span></div>
+          <div><b>${player.width_used_m || 0} &times; ${player.depth_used_m || 0} м</b><span>зона действий</span></div>
+          <div><b>${player.ball_episodes || 0}</b><span>эпизодов у мяча</span></div>
+        </div>
+        <div style="color:${teamColour(player.team)}">
+          <span class="label" style="color:var(--muted)">Дистанция по зонам скорости</span>
+          ${zoneBar((player.speed_zones && Object.fromEntries(
+            Object.entries(player.speed_zones).map(([k, v]) => [k, v.distance_m]))) || null)
+            || '<div class="none">нет данных</div>'}
+        </div>
+        <div><span class="label">В кадре</span><div class="seglist">${segChips(player.visible_segments, "")}</div></div>
+        <div><span class="label">Спринты быстрее ${DATA.thresholds.sprint_speed_kmh} км/ч</span><div class="seglist">${segChips(player.sprints, "sprint")}</div></div>
+        <div><span class="label">Ближе всех к мячу</span><div class="seglist">${segChips(player.ball_segments, "ball")}</div></div>
+        ${rosterCandidates(player)}
+      </div>
+    </div>`;
+    row.appendChild(cell);
+    cell.querySelectorAll("button[data-frame]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        seekTo(Number(button.dataset.frame));
+      });
+    });
+    requestAnimationFrame(() => heatCanvas(cell.querySelector(".heat"), player));
+    return row;
+  }
+
+  const body = document.getElementById("body");
+  let openId = null;
+
+  function openPlayer(identity) {
+    showTab("match");
+    openId = openId === identity ? null : identity;
+    paintTable();
+    const row = body.querySelector("tr.on");
+    if (row) row.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  function paintTable() {
+    const column = columns.find((c) => c.key === sortKey) || columns[0];
+    const sorted = players.slice().sort((a, b) => {
+      const av = valueOf(a, column), bv = valueOf(b, column);
+      const cmp = typeof av === "string" ? String(av).localeCompare(String(bv)) : (av || 0) - (bv || 0);
+      return sortAsc ? cmp : -cmp;
+    });
+    body.innerHTML = "";
+    const peakDistance = Math.max(1, ...players.map((p) => p.distance_m));
+    sorted.forEach((player) => {
+      const tr = document.createElement("tr");
+      tr.tabIndex = 0;
+      if (openId === player.identity) tr.classList.add("on");
+      const jersey = player.jersey
+        ? `<span class="num" style="background:${teamColour(player.team)}">${player.jersey}</span>`
+        : `<span class="num unknown">?</span>`;
+      const roleNote = player.role === "goalkeeper" ? "вратарь" : player.role === "referee" ? "судья" : "";
+      tr.innerHTML = `
+        <td><span class="kit">${jersey}<span>#${player.identity}</span>${roleNote ? `<span class="role">${roleNote}</span>` : ""}</span></td>
+        <td>${sideName(player.team)}</td>
+        <td>${player.time_on_camera_s.toFixed(1)}</td>
+        <td><span class="meter"><span class="bar"><i style="width:${(player.distance_m / peakDistance) * 100}%;background:${teamColour(player.team)}"></i></span>${player.distance_m.toFixed(0)}</span></td>
+        <td>${player.distance_per_minute_m.toFixed(0)}</td>
+        <td>${player.top_speed_kmh.toFixed(1)}</td>
+        <td>${player.average_speed_kmh.toFixed(1)}</td>
+        <td>${player.sprints.length}</td>
+        <td>${player.time_nearest_ball_s.toFixed(1)}</td>`;
+      const toggle = () => { openId = openId === player.identity ? null : player.identity; paintTable(); };
+      tr.addEventListener("click", toggle);
+      tr.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") { event.preventDefault(); toggle(); }
+      });
+      body.appendChild(tr);
+      if (openId === player.identity) body.appendChild(detailRow(player));
+    });
+    document.querySelectorAll("#head th").forEach((th) => {
+      if (th.dataset.key === sortKey) th.setAttribute("aria-sort", sortAsc ? "ascending" : "descending");
+      else th.removeAttribute("aria-sort");
+    });
+  }
+
+  document.getElementById("head").addEventListener("click", (event) => {
+    const th = event.target.closest("th");
+    if (!th) return;
+    if (sortKey === th.dataset.key) sortAsc = !sortAsc;
+    else { sortKey = th.dataset.key; sortAsc = false; }
+    paintTable();
+  });
+
+  /* --------------------------------------------------------------- методика */
+  const t = DATA.thresholds || {};
+  const cal = DATA.calibration || {};
+  document.getElementById("methodlead").textContent =
+    "Камера показывает поле в " + Math.round((DATA.coverage || 0) * 100) + "% кадров клипа. Остальное — " +
+    "крупные планы, где разметки не видно и координату взять неоткуда, плюс кадры, забракованные " +
+    "проверкой калибровки. Всё измерено только по оставшимся кадрам, то есть описывает происходившее " +
+    "в кадре, а не эпизод целиком.";
+  document.getElementById("method").innerHTML = [
+    ["Проверка калибровки",
+      "Положение на поле получается обращением гомографии, построенной по разметке. На незнакомом ракурсе " +
+      "она не отказывает, а молча возвращает неверный ответ: на этой записи после монтажной склейки карта " +
+      "оказалась зеркальной. Кадр бракуется, если порядок игроков слева направо перестал соответствовать " +
+      "оси поля, если все схлопнулись в точку или если игроки спроецировались за пределы поля. Забраковано " +
+      (cal.frames_rejected || 0) + " кадров."],
+    ["Дистанция и скорость",
+      "Дрожание координат иначе суммировалось бы как бег. Треки ограничены скоростью " +
+      t.player_max_speed_kmh + " км/ч и сглажены, а скорость меряется по базе в несколько кадров, а не " +
+      "между соседними. Остаточный шум калибровки всё равно завышает пик у дальних игроков."],
+    ["Трек мяча",
+      "Точки вне поля отбрасываются, дальше остаётся наибольшая последовательность, которую мяч на скорости " +
+      "до " + t.ball_max_speed_kmh + " км/ч реально мог пройти — здесь " +
+      (DATA.ball ? DATA.ball.kept + " из " + DATA.ball.observed : "\u2014") +
+      " — а короткие разрывы интерполируются. До фильтра худший шаг на этой записи означал 7 500 км/ч."],
+    ["У мяча",
+      "Это близость, а не зафиксированное касание: игрок, который ближе всех к мячу и не дальше " +
+      t.possession_radius_m + " м. Разумное приближение владения, не более того."],
+    ["Спринты",
+      "Отрезок быстрее " + t.sprint_speed_kmh + " км/ч длиной не меньше половины секунды. У каждого свой тайм-код."],
+    ["Идентичности",
+      "Строка — это одна идентичность трекера, а не обязательно один игрок на весь клип. Потерянный и снова " +
+      "найденный игрок может попасть в две строки; номера читает визуально-языковая модель и иногда ошибается."],
+  ].map(([term, text]) => `<dt>${term}</dt><dd>${text}</dd>`).join("");
+
+  document.getElementById("footer").innerHTML = [
+    DATA.source ? "Источник: " + DATA.source : "",
+    "Координаты в метрах на поле 105 &times; 68",
+    FPS + " кадр/с",
+  ].filter(Boolean).map((text) => `<span>${text}</span>`).join("");
+
+  /* ---------------------------------------------------------------- вкладки */
+  function showTab(name) {
+    const isMatch = name === "match";
+    document.getElementById("pane-match").hidden = !isMatch;
+    document.getElementById("pane-new").hidden = isMatch;
+    document.getElementById("tab-match").setAttribute("aria-selected", String(isMatch));
+    document.getElementById("tab-new").setAttribute("aria-selected", String(!isMatch));
+    if (isMatch) drawCoverage();
+  }
+  document.getElementById("tab-match").addEventListener("click", () => showTab("match"));
+  document.getElementById("tab-new").addEventListener("click", () => showTab("new"));
+
+  /* ----------------------------------------------------------- новый расчёт */
+  const SIDES = ["a", "b"];
+  const squadState = {
+    a: { team: "Команда A", short: "A", rows: [] },
+    b: { team: "Команда B", short: "B", rows: [] },
+  };
+  const escapeAttr = (value) => String(value).replace(/&/g, "&amp;").replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  function squadMarkup(key) {
+    const state = squadState[key];
+    const rows = state.rows.map((row, index) => `
+      <div class="squad-row">
+        <input value="${escapeAttr(row.number)}" data-key="${key}" data-index="${index}"
+               data-field="number" inputmode="numeric" aria-label="Номер">
+        <input value="${escapeAttr(row.name)}" data-key="${key}" data-index="${index}"
+               data-field="name" aria-label="Фамилия" placeholder="Фамилия">
+        <label><input type="checkbox" data-key="${key}" data-index="${index}" data-field="starter"
+               ${row.starter ? "checked" : ""}> в старте</label>
+        <button type="button" data-remove="${index}" data-key="${key}" aria-label="Убрать">&times;</button>
+      </div>`).join("");
+    return `<div class="squad">
+      <label class="field"><span>Название</span>
+        <input value="${escapeAttr(state.team)}" data-key="${key}" data-field="team"></label>
+      <label class="field"><span>Сокращение</span>
+        <input value="${escapeAttr(state.short)}" data-key="${key}" data-field="short"></label>
+      <div class="squad-row rowhead"><span>Номер</span><span>Фамилия</span><span>Старт</span><span></span></div>
+      <div class="squad-rows">${rows || '<span class="none">Пока никого</span>'}</div>
+      <button type="button" data-add="${key}">Добавить игрока</button>
+    </div>`;
+  }
+
+  function rosterObject() {
+    return {
+      name: (document.getElementById("f-seq").value || "match").trim(),
+      teams: SIDES.map((key) => {
+        const state = squadState[key];
+        const squad = {};
+        state.rows.forEach((row) => {
+          const number = String(row.number).trim();
+          if (number) squad[number] = row.name.trim();
+        });
+        return {
+          team: state.team.trim(),
+          short: state.short.trim(),
+          players: squad,
+          starting_lineup: state.rows
+            .filter((row) => row.starter && String(row.number).trim())
+            .map((row) => String(row.number).trim()),
+        };
+      }),
+    };
+  }
+
+  function refreshRosterJson() {
+    document.getElementById("roster-json").value = JSON.stringify(rosterObject(), null, 2);
+  }
+
+  function paintSquads() {
+    document.getElementById("squads").innerHTML = SIDES.map(squadMarkup).join("");
+    refreshRosterJson();
+  }
+
+  document.getElementById("squads").addEventListener("input", (event) => {
+    const el = event.target;
+    const key = el.dataset.key;
+    if (!key) return;
+    if (el.dataset.index === undefined) {
+      squadState[key][el.dataset.field] = el.value;
+    } else {
+      const row = squadState[key].rows[Number(el.dataset.index)];
+      row[el.dataset.field] = el.type === "checkbox" ? el.checked : el.value;
+    }
+    refreshRosterJson();
+    paintCommands();
+  });
+
+  document.getElementById("squads").addEventListener("click", (event) => {
+    const add = event.target.closest("[data-add]");
+    if (add) {
+      squadState[add.dataset.add].rows.push({ number: "", name: "", starter: false });
+      paintSquads();
+      paintCommands();
+      return;
+    }
+    const remove = event.target.closest("[data-remove]");
+    if (remove) {
+      squadState[remove.dataset.key].rows.splice(Number(remove.dataset.remove), 1);
+      paintSquads();
+      paintCommands();
+    }
+  });
+
+  const loadButton = document.getElementById("load-roster");
+  if (!DATA.roster || !(DATA.roster.teams || []).length) {
+    loadButton.disabled = true;
+    loadButton.title = "В этом отчёте заявки нет";
+  }
+  loadButton.addEventListener("click", () => {
+    if (!DATA.roster) return;
+    (DATA.roster.teams || []).slice(0, 2).forEach((team, index) => {
+      const key = SIDES[index];
+      squadState[key].team = team.team || squadState[key].team;
+      squadState[key].short = team.short || squadState[key].short;
+      const starters = new Set((team.starting_lineup || []).map(String));
+      squadState[key].rows = Object.entries(team.players || {})
+        .sort((a, b) => Number(a[0]) - Number(b[0]))
+        .map(([number, name]) => ({ number: number, name: name, starter: starters.has(number) }));
+    });
+    paintSquads();
+    paintCommands();
+  });
+
+  /* Браузер не отдаёт странице путь к файлу — только имя. Поэтому папка
+     спрашивается отдельно, а всё остальное читается из самой записи. */
+  let chosenFile = null;
+
+  function humanSize(bytes) {
+    const mb = bytes / 1048576;
+    return mb >= 1024 ? (mb / 1024).toFixed(1) + " ГБ" : mb.toFixed(1) + " МБ";
+  }
+
+  function latinName(name) {
+    const base = name.replace(/[.][^.]+$/, "");
+    const cleaned = base.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    return (cleaned || "MATCH").toUpperCase().slice(0, 32);
+  }
+
+  function measure(file) {
+    const probe = document.createElement("video");
+    probe.preload = "metadata";
+    probe.muted = true;
+    const url = URL.createObjectURL(file);
+    probe.src = url;
+    probe.addEventListener("loadedmetadata", () => {
+      const bits = [
+        humanSize(file.size),
+        probe.duration ? probe.duration.toFixed(1) + " с" : null,
+        probe.videoWidth ? probe.videoWidth + "×" + probe.videoHeight : null,
+      ].filter(Boolean);
+      document.getElementById("drop-meta").textContent = bits.join(" · ");
+      if (probe.duration && isFinite(probe.duration)) {
+        document.getElementById("f-dur").value = Math.round(probe.duration);
+      }
+      if (!seqTouched) {
+        document.getElementById("f-seq").value = latinName(file.name);
+      }
+      paintCommands();
+      refreshRosterJson();
+      URL.revokeObjectURL(url);
+    }, { once: true });
+    probe.addEventListener("error", () => {
+      document.getElementById("drop-meta").textContent =
+        humanSize(file.size) + " · длительность прочитать не удалось, укажите её вручную";
+      URL.revokeObjectURL(url);
+    }, { once: true });
+  }
+
+  function acceptFile(file) {
+    if (!file) return;
+    chosenFile = file;
+    document.getElementById("drop-name").textContent = file.name;
+    document.getElementById("drop-meta").textContent = humanSize(file.size);
+    measure(file);
+  }
+
+  const drop = document.getElementById("drop");
+  const filePicker = document.getElementById("f-file");
+  drop.addEventListener("click", () => filePicker.click());
+  drop.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") { event.preventDefault(); filePicker.click(); }
+  });
+  filePicker.addEventListener("change", () => acceptFile(filePicker.files[0]));
+  ["dragenter", "dragover"].forEach((name) =>
+    drop.addEventListener(name, (event) => { event.preventDefault(); drop.classList.add("over"); }));
+  ["dragleave", "drop"].forEach((name) =>
+    drop.addEventListener(name, () => drop.classList.remove("over")));
+  drop.addEventListener("drop", (event) => {
+    event.preventDefault();
+    acceptFile(event.dataTransfer.files && event.dataTransfer.files[0]);
+  });
+
+  let seqTouched = false;
+  document.getElementById("f-seq").addEventListener("input", () => { seqTouched = true; });
+
+  function paintCommands() {
+    const B = "\u005c";
+    const seq = (document.getElementById("f-seq").value || "MATCH-001").trim();
+    const folder = (document.getElementById("f-dir").value || "").trim().replace(/[\\/]+$/, "");
+    const name = chosenFile ? chosenFile.name : "match.mp4";
+    const src = folder ? folder + B + name : name;
+    const dur = document.getElementById("f-dur").value || "30";
+    const fps = document.getElementById("f-fps").value || "25";
+    const withRoster = SIDES.some((key) => squadState[key].rows.length);
+    const media = "data" + B + "perception_benchmark" + B + "media" + B + seq;
+    const run = "runs" + B + seq;
+    const rosterPath = "data" + B + "runtime" + B + "rosters" + B + seq + ".json";
+    const lines = [];
+    if (withRoster) {
+      lines.push("# 0. сохранить заявку из карточки ниже в " + rosterPath, "");
+    }
+    lines.push(
+      "# 1. привести запись к 1080p и " + fps + " кадр/с",
+      'ffmpeg -y -i "' + src + '" -an -vf "scale=1920:1080,fps=' + fps + '" `',
+      "  -c:v libx264 -preset slow -crf 16 " + media + B + seq + ".mp4",
+      "ffmpeg -y -i " + media + B + seq + ".mp4 -qscale:v 2 " + media + B + "img1" + B + "%06d.jpg",
+      "",
+      "# 2. перцепция на видеокарте (около 25 минут на 30 секунд)",
+      "python scripts" + B + "run_soccernet_core.py --core-url http://localhost:8000 `",
+      "  --sequence " + seq + " --media-path /data/media/" + seq + "/" + seq + ".mp4 `",
+      "  --output-dir " + run + " --fps " + fps + " --duration " + dur,
+      "",
+      "# 3. перечитать номера по лучшим кадрам каждой личности",
+      "python scripts" + B + "reread_jerseys.py --sequences " + seq + " `",
+      "  --runs-root runs --run-template " + seq + " `",
+      "  --frames-root data" + B + "perception_benchmark" + B + "media",
+      "",
+      "# 4. уточнить роли, команды и номера",
+      "python scripts" + B + "refine_gamestate.py --sequence " + seq + " `",
+      "  --predictions " + run + B + "predictions.json `",
+      "  --frames-root data" + B + "perception_benchmark" + B + "media --link-tracklets `",
+      "  --jersey-reads " + run + B + "jersey_reads.json `",
+      "  --output " + run + B + "predictions_refined.json --report " + run + B + "refinement.json",
+      "",
+      "# 5. статистика и просмотрщик",
+      "python scripts" + B + "build_match_report.py `",
+      "  --predictions " + run + B + "predictions_refined.json `",
+      "  --output " + run + B + "match_report.json --fps " + fps +
+        (withRoster ? " `" : ""),
+    );
+    if (withRoster) lines.push("  --roster " + rosterPath);
+    lines.push(
+      "python scripts" + B + "build_match_viewer.py --report " + run + B + "match_report.json `",
+      "  --video " + run + B + "clip_web.mp4 --output " + run + B + "viewer.html",
+    );
+    document.getElementById("cmd").textContent = lines.join("\n");
+  }
+
+  ["f-seq", "f-dir", "f-dur", "f-fps"].forEach((id) => {
+    document.getElementById(id).addEventListener("input", () => { paintCommands(); refreshRosterJson(); });
+  });
+
+  function copyFrom(node, button) {
+    const text = node.value !== undefined ? node.value : node.textContent;
+    const done = () => {
+      const was = button.textContent;
+      button.textContent = "Скопировано";
+      setTimeout(() => { button.textContent = was; }, 1400);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, () => {});
+      return;
+    }
+    const area = document.createElement("textarea");
+    area.value = text;
+    document.body.appendChild(area);
+    area.select();
+    try { document.execCommand("copy"); done(); } finally { area.remove(); }
+  }
+  document.getElementById("copy-cmd").addEventListener("click", (event) =>
+    copyFrom(document.getElementById("cmd"), event.currentTarget));
+  document.getElementById("copy-roster").addEventListener("click", (event) =>
+    copyFrom(document.getElementById("roster-json"), event.currentTarget));
+
+  /* -------------------------------------------------------------------- тема */
+  document.getElementById("theme").addEventListener("click", () => {
+    const root = document.documentElement;
+    const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+    const now = root.getAttribute("data-theme") || (dark ? "dark" : "light");
+    root.setAttribute("data-theme", now === "dark" ? "light" : "dark");
+    drawCoverage();
+    paintTable();
+    paintOnCam(cursor);
+  });
+
+  window.addEventListener("resize", drawCoverage);
+  drawCoverage();
+  paintTable();
+  paintSquads();
+  paintCommands();
+  refresh(0);
+})();
+</script>

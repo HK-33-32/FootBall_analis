@@ -34,6 +34,8 @@ Detection = dict[str, Any]
 FrameLoader = Callable[[int], "np.ndarray | None"]
 
 PLAYER_ROLES = ("player", "goalkeeper")
+# roles this module may move a tracklet between; the ball is never one of them
+TRACKED_ROLES = ("player", "goalkeeper", "referee")
 
 
 @dataclass(frozen=True)
@@ -52,8 +54,11 @@ class RefinementConfig:
     min_value: int = 25
     lightness_weight: float = 0.0
     min_separation_ratio: float = 3.0
+    max_kit_mass_share: float = 0.62
     min_track_samples: int = 2
     goalkeeper_min_abs_x: float = 25.0
+    touchline_abs_y: float = 32.0
+    referee_max_speed_m_s: float = 7.0
     reconcile_roles: bool = True
     offside_rank: int = 2
     jersey_min_votes: int = 2
@@ -100,6 +105,7 @@ class TrackSummary:
     detections: int = 0
     descriptor: np.ndarray | None = None
     pitch_x: float = 0.0
+    pitch_y: float = 0.0
     team: str | None = None
     team_cluster: int | None = None
     team_margin: float = 0.0
@@ -147,13 +153,14 @@ def summarise_tracks(
     by_frame: dict[int, list[Detection]] = defaultdict(list)
     roles: dict[int, Counter] = defaultdict(Counter)
     pitch_x: dict[int, list[float]] = defaultdict(list)
+    pitch_y: dict[int, list[float]] = defaultdict(list)
     jersey_votes: dict[int, Counter] = defaultdict(Counter)
     heights: dict[int, list[float]] = defaultdict(list)
     trajectory: dict[int, list[tuple[int, float, float]]] = defaultdict(list)
     counts: Counter = Counter()
     for detection in predictions:
         attributes = detection.get("attributes") or {}
-        if attributes.get("role") not in PLAYER_ROLES:
+        if attributes.get("role") not in TRACKED_ROLES:
             continue
         track_id = detection["track_id"]
         counts[track_id] += 1
@@ -163,6 +170,7 @@ def summarise_tracks(
         pitch = detection.get("bbox_pitch") or {}
         if "x_bottom_middle" in pitch:
             pitch_x[track_id].append(float(pitch["x_bottom_middle"]))
+            pitch_y[track_id].append(float(pitch["y_bottom_middle"]))
             trajectory[track_id].append(
                 (
                     int(detection["frame"]),
@@ -197,6 +205,7 @@ def summarise_tracks(
             detections=total,
             descriptor=np.median(np.asarray(observed), axis=0) if observed else None,
             pitch_x=float(np.median(pitch_x[track_id])) if pitch_x[track_id] else 0.0,
+            pitch_y=float(np.median(pitch_y[track_id])) if pitch_y[track_id] else 0.0,
             jersey_votes=jersey_votes[track_id],
             start_frame=path[0][0] if path else 0,
             end_frame=path[-1][0] if path else 0,
@@ -239,6 +248,15 @@ def _separation_ratio(
     return gap / scatter if scatter > 1e-9 else float("inf")
 
 
+def _mass_share(weights: np.ndarray, labels: np.ndarray) -> float:
+    """Share of the observed detections that the larger of the two kits holds."""
+    total = float(weights.sum())
+    if total <= 0:
+        return 1.0
+    first = float(weights[labels == 0].sum())
+    return max(first, total - first) / total
+
+
 def _cluster_kits(
     descriptors: np.ndarray, weights: np.ndarray, config: RefinementConfig
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
@@ -255,6 +273,15 @@ def _cluster_kits(
     with, and it shows -- the two centres end up barely further apart than the
     scatter within each. When that happens the clustering is retried with
     lightness at full weight, which is the only evidence left.
+
+    Separation alone does not always catch it. A chroma split can look
+    comfortably separated and still be a split of something other than the two
+    teams, and then it gives itself away by its size: both teams are on the
+    pitch throughout, so a split that puts three quarters of the observed mass
+    on one side is not a split by kit. Measured over four SoccerNet sequences
+    the correct chroma split never sent more than 0.585 of the mass one way,
+    while a broken one sent 0.761 -- so a lopsided split is retried too, and
+    the retry is kept only if it is genuinely more even.
     """
 
     def split(lightness: float) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
@@ -264,9 +291,75 @@ def _cluster_kits(
         return labels, centres, scale, _separation_ratio(scaled, weights, labels, centres)
 
     result = split(config.lightness_weight)
-    if result[3] < config.min_separation_ratio and config.lightness_weight < 1.0:
+    if config.lightness_weight >= 1.0:
+        return result
+    if result[3] < config.min_separation_ratio:
         return split(1.0)
+    if _mass_share(weights, result[0]) > config.max_kit_mass_share:
+        alternative = split(1.0)
+        if _mass_share(weights, alternative[0]) < _mass_share(weights, result[0]):
+            return alternative
     return result
+
+
+def demote_surplus_referees(
+    summaries: dict[int, TrackSummary], config: RefinementConfig
+) -> list[int]:
+    """Only one referee runs inside the field of play. Everyone else is a player.
+
+    A match has one referee on the pitch; the assistants stay beyond the
+    touchline, where no player ever goes, so a tracklet whose median position
+    is outside ``touchline_abs_y`` is an official and is left alone. Inside the
+    field, several simultaneous "referees" are a contradiction, and colour
+    cannot always settle it -- on footage where the officials wear black and a
+    team wears white, the two are indistinguishable once illumination is
+    factored out.
+
+    Movement settles it instead. The referee is one person, so his tracklets
+    form a chain that is continuous in time and reachable at a jogging pace.
+    The heaviest such chain is kept and every other in-field candidate is
+    demoted. Measured on a clip where the backend called three yellow-shirted
+    players referees: the genuine fragments chained at 2.9 and 4.8 m/s, while
+    joining the impostor to the chain would have required 15.0 m/s.
+    """
+    officials = [summary for summary in summaries.values() if summary.role == "referee"]
+    candidates = sorted(
+        (s for s in officials if abs(s.pitch_y) < config.touchline_abs_y),
+        key=lambda summary: (summary.start_frame, summary.track_id),
+    )
+    if len(candidates) < 2:
+        return []
+
+    count = len(candidates)
+    best = [summary.detections for summary in candidates]
+    previous = [-1] * count
+    for later in range(count):
+        for earlier in range(later):
+            head, tail = candidates[earlier], candidates[later]
+            gap = (tail.start_frame - head.end_frame) / 25.0
+            if gap <= 0:
+                continue
+            distance = float(
+                np.linalg.norm(np.asarray(head.last_point) - np.asarray(tail.first_point))
+            )
+            if distance > config.referee_max_speed_m_s * gap:
+                continue
+            if best[earlier] + tail.detections > best[later]:
+                best[later] = best[earlier] + tail.detections
+                previous[later] = earlier
+
+    end = int(np.argmax(best))
+    chain = set()
+    while end != -1:
+        chain.add(candidates[end].track_id)
+        end = previous[end]
+
+    demoted = []
+    for summary in candidates:
+        if summary.track_id not in chain:
+            summary.role = "player"
+            demoted.append(summary.track_id)
+    return demoted
 
 
 def _opposite(side: str) -> str:
@@ -374,7 +467,11 @@ def assign_teams(
     config: RefinementConfig,
 ) -> dict[str, Any]:
     """Cluster outfield tracklets by kit colour and map the clusters to pitch sides."""
-    demoted = demote_stranded_goalkeepers(summaries, config) if config.reconcile_roles else []
+    demoted: list[int] = []
+    surplus: list[int] = []
+    if config.reconcile_roles:
+        demoted = demote_stranded_goalkeepers(summaries, config)
+        surplus = demote_surplus_referees(summaries, config)
     outfield = [
         summary
         for summary in summaries.values()
@@ -437,6 +534,8 @@ def assign_teams(
             "lightness_weight": float(scale[0]),
             "cluster_separation_ratio": round(separation_ratio, 3),
             "min_separation_ratio": config.min_separation_ratio,
+            "kit_mass_share": round(_mass_share(weights, labels), 3),
+            "max_kit_mass_share": config.max_kit_mass_share,
             "cluster_scatter": round(scatter, 3),
             "side_rule": rule,
             "goalkeeper_side": goalkeeper_side,
@@ -446,6 +545,7 @@ def assign_teams(
             "sides_agree": fallback == sides,
             "team_sizes": dict(Counter(summary.team for summary in assigned)),
             "goalkeepers_demoted": demoted,
+            "surplus_referees_demoted": surplus,
         }
     )
     return report
@@ -702,7 +802,7 @@ def refine_predictions(
         item = dict(detection)
         attributes = dict(item.get("attributes") or {})
         summary = summaries.get(item.get("track_id"))
-        if summary is not None and attributes.get("role") in PLAYER_ROLES:
+        if summary is not None and attributes.get("role") in TRACKED_ROLES:
             if attributes.get("role") != summary.role:
                 attributes["role"] = summary.role
                 changed_role += 1
@@ -892,6 +992,7 @@ __all__ = [
     "VideoFrames",
     "assign_teams",
     "demote_stranded_goalkeepers",
+    "demote_surplus_referees",
     "refine_predictions",
     "detection_key",
     "link_tracklets",
