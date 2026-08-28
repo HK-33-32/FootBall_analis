@@ -107,3 +107,61 @@ def test_the_length_of_a_missing_file_is_zero_not_an_exception(tmp_path):
     from football_intelligence.analysis import video_duration_s
 
     assert video_duration_s(tmp_path / "nothing.mp4") == 0.0
+
+
+def _planned(root, name="run1", chunks=3, done=0, video=None):
+    import json
+
+    directory = root / name
+    (directory / "chunks").mkdir(parents=True)
+    (directory / "plan.json").write_text(
+        json.dumps(
+            {
+                "screen": {"playable_s": 180.0, "duration_s": 300.0},
+                "chunks": [{"name": f"chunk{i:04d}"} for i in range(chunks)],
+                "video": str(video or (root / "match.mp4")),
+                "title": "Прерванный",
+            }
+        ),
+        encoding="utf-8",
+    )
+    for i in range(done):
+        (directory / "chunks" / f"chunk{i:04d}.json").write_text('{"predictions": []}')
+    return directory
+
+
+def test_an_interrupted_run_is_found_with_the_work_it_kept(tmp_path):
+    from football_intelligence.analysis import AnalysisManager
+
+    _planned(tmp_path, "run1", chunks=5, done=2)
+    manager = AnalysisManager(AnalysisConfig(reports_dir=tmp_path))
+    found = manager.interrupted()
+    assert len(found) == 1
+    assert found[0]["chunks_done"] == 2
+    assert found[0]["chunks_total"] == 5
+    assert found[0]["title"] == "Прерванный"
+
+
+def test_a_finished_run_is_not_offered_for_resuming(tmp_path):
+    from football_intelligence.analysis import AnalysisManager
+
+    directory = _planned(tmp_path, "done", chunks=2, done=2)
+    (directory / "match_report.json").write_text("{}", encoding="utf-8")
+    assert AnalysisManager(AnalysisConfig(reports_dir=tmp_path)).interrupted() == []
+
+
+def test_resuming_without_the_original_video_says_so(tmp_path):
+    import pytest
+
+    from football_intelligence.analysis import AnalysisManager
+
+    _planned(tmp_path, "gone", chunks=2, done=1, video=tmp_path / "vanished.mp4")
+    manager = AnalysisManager(AnalysisConfig(reports_dir=tmp_path))
+    with pytest.raises(FileNotFoundError):
+        manager.resume("gone")
+
+
+def test_resuming_something_that_was_never_planned_is_none(tmp_path):
+    from football_intelligence.analysis import AnalysisManager
+
+    assert AnalysisManager(AnalysisConfig(reports_dir=tmp_path)).resume("nope") is None

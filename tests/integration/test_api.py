@@ -160,3 +160,36 @@ def test_analyses_are_listed_and_can_be_fetched_by_id(tmp_path, monkeypatch):
         assert client.get(f"/api/v1/analyses/{run_id}").status_code == 200
         assert any(item["id"] == run_id for item in client.get("/api/v1/analyses").json())
         assert client.get("/api/v1/analyses/nope").status_code == 404
+
+
+def test_an_interrupted_run_is_offered_and_can_be_resumed(tmp_path, monkeypatch):
+    import json
+
+    reports = tmp_path / "reports"
+    (reports / "halfway" / "chunks").mkdir(parents=True)
+    video = tmp_path / "match.mp4"
+    video.write_bytes(b"not really a video")
+    (reports / "halfway" / "plan.json").write_text(
+        json.dumps(
+            {
+                "screen": {"playable_s": 120.0, "duration_s": 200.0},
+                "chunks": [{"name": "chunk0000"}, {"name": "chunk0001"}],
+                "video": str(video),
+                "title": "После перезагрузки",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (reports / "halfway" / "chunks" / "chunk0000.json").write_text('{"predictions": []}')
+    monkeypatch.setenv("FI_REPORTS_DIR", str(reports))
+    monkeypatch.setenv("FI_CORE_URL", "http://127.0.0.1:9")
+
+    with TestClient(create_app(tmp_path / "runtime")) as client:
+        rows = client.get("/api/v1/analyses/interrupted").json()
+        assert [row["id"] for row in rows] == ["halfway"]
+        assert rows[0]["chunks_done"] == 1 and rows[0]["chunks_total"] == 2
+
+        resumed = client.post("/api/v1/analyses/halfway/resume")
+        assert resumed.status_code == 202
+        assert resumed.json()["id"] == "halfway"
+        assert client.post("/api/v1/analyses/nope/resume").status_code == 404

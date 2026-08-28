@@ -191,6 +191,7 @@
       <span class="status" id="formStatus">Проверяю контейнер перцепции…</span>
     </div>
 
+    <div id="interrupted"></div>
     <div id="runs"></div>
   </div>
 
@@ -390,15 +391,52 @@ function paintRun(run) {
   return node;
 }
 
+const interruptedHolder = document.getElementById('interrupted');
+
+async function paintInterrupted() {
+  const rows = await fetch('/api/v1/analyses/interrupted').then(r => r.json()).catch(() => []);
+  interruptedHolder.innerHTML = '';
+  for (const row of rows) {
+    const node = document.createElement('div');
+    node.className = 'run';
+    const share = row.chunks_total ? Math.round(100 * row.chunks_done / row.chunks_total) : 0;
+    node.innerHTML =
+      '<div class="top"><span class="name"></span>' +
+      '<button type="button" class="stop">продолжить</button></div>' +
+      '<div class="track"><i style="width:' + share + '%"></i></div>' +
+      '<div class="meta"></div>';
+    node.querySelector('.name').textContent = row.title + ' — расчёт прерван';
+    node.querySelector('.meta').textContent =
+      'посчитано ' + row.chunks_done + ' кусков из ' + row.chunks_total +
+      ' · они не будут пересчитываться';
+    node.querySelector('button').addEventListener('click', async (event) => {
+      event.target.disabled = true;
+      const response = await fetch('/api/v1/analyses/' + row.id + '/resume', { method: 'POST' });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        say(payload.detail || 'не удалось продолжить', 'bad');
+        event.target.disabled = false;
+        return;
+      }
+      say('Продолжаю с того места, где остановился.', 'good');
+      paintInterrupted();
+      pollRuns();
+    });
+    interruptedHolder.appendChild(node);
+  }
+}
+
 let pollTimer = null;
 async function pollRuns() {
   const runs = await fetch('/api/v1/analyses').then(r => r.json()).catch(() => []);
   runsHolder.innerHTML = '';
   runs.forEach(run => runsHolder.appendChild(paintRun(run)));
   const active = runs.some(r => !['done', 'error', 'canceled'].includes(r.stage));
+  if (!active) paintInterrupted();
   clearTimeout(pollTimer);
   pollTimer = setTimeout(pollRuns, active ? 2000 : 15000);
 }
+paintInterrupted();
 pollRuns();
 </script>
 </body>

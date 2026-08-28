@@ -395,6 +395,7 @@ def create_app(data_dir: str | Path | None = None) -> FastAPI:
         reports_dir=reports_root,
         fps=int(os.environ.get("FI_ANALYSIS_FPS", "25")),
         chunk_s=float(os.environ.get("FI_CHUNK_SECONDS", "60")),
+        cooldown_s=float(os.environ.get("FI_CHUNK_COOLDOWN_SECONDS", "0")),
     )
     analyses = AnalysisManager(analysis_config)
     application.state.analyses = analyses
@@ -450,6 +451,23 @@ def create_app(data_dir: str | Path | None = None) -> FastAPI:
     @application.get("/api/v1/analyses")
     def list_analyses() -> list[dict[str, Any]]:
         return analyses.list()
+
+    @application.get("/api/v1/analyses/interrupted")
+    def list_interrupted() -> list[dict[str, Any]]:
+        """Runs whose chunks are on disk but which never produced a report."""
+        return analyses.interrupted()
+
+    @application.post("/api/v1/analyses/{analysis_id}/resume", status_code=202)
+    def resume_analysis(analysis_id: str) -> dict[str, Any]:
+        try:
+            analysis = analyses.resume(analysis_id)
+        except FileNotFoundError as exc:
+            raise HTTPException(
+                409, f"исходное видео больше недоступно: {exc}"
+            ) from exc
+        if analysis is None:
+            raise HTTPException(404, "нет прерванного расчёта с таким номером")
+        return analysis.as_dict()
 
     @application.get("/api/v1/analyses/{analysis_id}")
     def get_analysis(analysis_id: str) -> dict[str, Any]:

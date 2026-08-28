@@ -175,6 +175,36 @@ says "yellow" regardless -- so `read_cards.py` prints a warning, and a verified
 list can be fed to `build_match_report.py --cards` instead. `ACCURACY.md` has
 the measurements.
 
+### Long runs, and a machine that falls over
+
+A full match is hours of unbroken all-core load with a GPU alongside it, and
+that is a workload some machines do not survive. On the development laptop a
+full-match run ended in a `CLOCK_WATCHDOG_TIMEOUT` (0x101) bugcheck. The system
+log is unambiguous about what it was: a WHEA-Logger event ID 1, *fatal hardware
+error*, timestamped with the reboot, its error record a CPER with all seven
+sections reported by platform firmware. An identical fatal record appears
+weeks earlier, before any of this existed, so the instability is the machine's
+and not the pipeline's -- but the pipeline is what finds it.
+
+Nothing here can fix that. What it can do is stop it costing the day, so a run
+now checkpoints:
+
+* Screening writes `plan.json` beside the report before any GPU work starts.
+* Every finished chunk is written to `chunks/chunkNNNN.json` the moment its
+  predictions arrive.
+* A run started against a directory that already holds them skips what is done.
+
+After a crash the service has no memory of what it was doing -- the job list
+lives in the process -- so it looks for the evidence instead. `GET
+/api/v1/analyses/interrupted` finds directories holding a plan and no report,
+and the page offers each one a **продолжить** button. Verified by killing the
+container mid-run: one chunk of three had been kept, and the resumed run began
+at the second.
+
+If a machine is falling over under sustained load, `FI_CHUNK_COOLDOWN_SECONDS`
+puts a pause between chunks. It costs exactly what it says and is worth trying
+before concluding the run is impossible.
+
 ### The viewer as a service
 
 `build_match_viewer.py` bakes the clip into the page as a data URI, which is
