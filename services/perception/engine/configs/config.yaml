@@ -1,0 +1,89 @@
+DEVICE          : cuda              # device used for training and evaluation (cpu, cuda, cuda0, cuda1, ...)
+IMG_SAVE_DIR    : 'results/predicted_SNGamestate_results'
+LOG_DIR         : 'results/court_SNGamestate_results'
+DATA_DIR        : 'data/SoccerNetGS'
+JERSEY_MODE     : 'CLIP' #'LLAMA'
+DATA_SETS       : ['test']
+
+DETECTOR:
+  TYPE              : 'rfdetr'   # rfdetr | yolox
+  RFDETR_MODEL      : 'large'    # nano | small | medium | base | large
+  RFDETR_RESOLUTION : 0        # 0 = the model's native resolution
+  RFDETR_CONF       : 0.35
+  RFDETR_BALL_CONF  : 0.05   # мяч мелкий: отдельный, более низкий порог
+  BALL_REFINE       : true   # доводка кропом по кадрам, где мяч не нашёлся
+  BALL_CROP         : 512    # сторона кропа, px
+  BALL_TRACK_SCORE  : 0.85   # трекер заводит трек только выше NEW_TRACK_THRESH
+  BALL_MAX_STEP_PX_PER_S : 1600  # физика мяча: px в секунду на кадре 1080p
+  BALL_REACQUIRE_FRAMES : 8  # после стольких пустых кадров ищем мяч заново
+
+BATCH_SIZE      : 8      # frames per detector batch
+JERSEY_STRIDE   : 3      # per-frame role classification; numbers are voted per tracklet
+CALIB_WORKERS   : 4      # parallel processes for the pitch-calibration stage
+CALIB_STRIDE    : 1
+TRACKLET_ATTRIBUTES : true
+USE_PRTREID         : false  # доп. признак команд (веса в checkpoints/prtreid)   # team by appearance clustering + jersey voted per tracklet
+JERSEY_MIN_VOTE     : 1.0    # minimum accumulated probability for a number
+JERSEY_UNKNOWN_RATIO: 0.15   # ... relative to the 'number not visible' mass
+JERSEY_READER       : 'clip' # clip | qwen-vl
+
+JERSEY_VLM:
+  MODEL_PATH  : 'checkpoints/Qwen2.5-VL-7B-Instruct-Q8_0.gguf'
+  MMPROJ_PATH : 'checkpoints/mmproj-Qwen2.5-VL-7B-Instruct-f16.gguf'
+  CROPS_PER_TRACK : 24
+  MIN_VOTES       : 1
+  GROUP_SIZE      : 4    # кропов в одном запросе к VLM
+  MAX_TRACKS      : 200   # только самые длинные треклеты
+  VOTE_WEIGHT     : 2.0   # вес ответа VLM относительно всей массы CLIP      # compute homography every N frames, copy in between
+
+TRACKER:
+  MODEL_PATH    : 'checkpoints/yolox_soccernet.pth.tar'
+  EXP_FILE      : 'exp/yolox_x_soccernet.py'
+  FP16          : False
+  FUSE          : False
+  TRT           : False
+  FPS           : 25
+  CONF          : 0.1
+  NMS_THRESH        : 0.7
+  TRACK_HIGH_THRESH : 0.6   
+  TRACK_LOW_THRESH  : 0.05
+  NEW_TRACK_THRESH  : 0.7      
+  TRACK_BUFFER      : 60
+  MATCH_THRESH      : 0.8  
+  TSIZE             : (800,1440)
+  ASPECT_RATIO_THRESH     : 1.6
+  MIN_BOX_AREA            : 10
+  PROXIMITY_THRESH        : 0.5    
+  APPEARANCE_THRESH       : 0.25       
+  WITH_REID               : True
+
+
+REID:
+  MODEL_PATH    : 'checkpoints/sports_model.pth.tar-60'
+  IMAGE_SIZE    : [256, 128]
+
+SFR:
+  MODEL_PATH    : 'checkpoints/SoccernetGSR_EfficientNet_Best.pth'
+  KPTS_PATH     : 'sfr/template/soccernet_template_97.npy' 
+  TEMPLATE_PATH : 'sfr/template/Radar.png'
+  SPORTS_TYPE   : 'soccer'
+  NUM_KPTS      : 97 
+  NUM_LINES     : 21
+  DIST_THRES    : 30
+  CONF_THRES    : 0.8
+  IMAGE_SIZE    : [384, 384]
+  TEMPLATE_SIZE : [125, 78]
+  TOP_KPTS :  [3, 4, 64, 65] 
+
+IDATR:
+  MODEL_PATH    : 'checkpoints/sports_model.pth.tar-60'
+  GAP_LEN       : 25
+  USE_JN        : True
+  SPATIAL_FACTOR      : 1
+  MERGE_DIST_THRES    : 0.4
+
+LLAMA:
+  MODEL_PATH    : 'checkpoints/lora_model_jersey_role_soccernet'
+
+CLIP:
+  MODEL_PATH    : 'checkpoints/CLIP_Jersey.pth'

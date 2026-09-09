@@ -1,0 +1,594 @@
+--- a/core/jobs.py
++++ b/core/jobs.py
+@@ -507,6 +507,11 @@
+             code = proc.wait()
+             if code != 0 and not job._cancel:
+                 failures.append("«%s%s» → код %d" % (prefix, stage.title, code))
++            # the parts of a stage run side by side, so the stage costs what its
++            # slowest part costs -- worth recording which one that was
++            if part.label:
++                job.timings["%s:%s" % (stage.key, part.label)] = round(
++                    time.perf_counter() - started, 1)
+             shares[index] = 1.0
+             publish()
+ 
+--- a/core/runners/run_idatr.py
++++ b/core/runners/run_idatr.py
+@@ -46,12 +46,29 @@
+         # inside write_json_file_team must not flip them back
+         writer.USE_COLOR_TEAM_OVERRIDE = False
+         writer.USE_GK_ANCHORED_SIDES = True
++    timings = {}
+     for label, fn in steps:
+         started = time.perf_counter()
+         print(label, flush=True)
+         fn()
++        timings[label.replace("STEP ", "")] = round(time.perf_counter() - started, 1)
+         print(f"{label} done in {time.perf_counter() - started:.1f}s", flush=True)
++    # the job keeps only the tail of the log, and the early steps scroll out of
++    # it long before anyone reads it -- so the breakdown goes next to the config
++    _write_timings(args.config, timings)
++    print("STEP timings: %s" % timings, flush=True)
+     return 0
++
++
++def _write_timings(config_path, timings) -> None:
++    import json
++
++    try:
++        target = os.path.join(os.path.dirname(config_path), "idatr_timings.json")
++        with open(target, "w", encoding="utf-8") as fh:
++            json.dump(timings, fh, ensure_ascii=False, indent=1)
++    except OSError:
++        pass
+ 
+ 
+ def _write_json(writer, cfg, splits):
+--- a/engine/inference_soccernetGSR.py
++++ b/engine/inference_soccernetGSR.py
+@@ -1,4 +1,5 @@
+ # from unsloth import FastVisionModel (Moved to local import)
++import collections
+ import glob
+ import os
+ import os.path as osp
+@@ -33,6 +34,7 @@
+ from transformers import TextStreamer
+ from jersey_model.CLIPFinetune import CLIPFinetune
+ from detectors import build_detector
++from fast_prep import thread_map
+ from jersey_batch import BatchedJerseyClassifier
+ import clip
+ 
+@@ -455,6 +457,7 @@
+             FastVisionModel.for_inference(self.jersey_model)
+ 
+     def process_video(self, video_path, vis_folder, batch_size=4):
++        spent = collections.defaultdict(float)
+         # Updated key names to include "color"
+         key_names = ["frame", "track_id", "x", "y", "w", "h", "score", "role", "jersey", "color", "team"]
+         instruction = "Classify Role, Jersey Number and Jersey Color"
+@@ -482,7 +485,50 @@
+             # Each batch is a list of tuples: (frame, frame_id, path)
+             frames, frame_ids, paths = zip(*batch)
+             # Run batched inference for detection (boxes already in image coords)
++            _t = time.perf_counter()
+             outputs_batch = self.detector.detect_batch(list(frames))
++            spent["detect"] += time.perf_counter() - _t
++
++            # Detection already works a batch of frames at a time; re-ID used to
++            # be called once per frame with the twenty or so crops that frame
++            # held, which is a GPU call for every frame of the match. The crops
++            # of the whole batch are prepared on the pool and embedded in one
++            # call instead. The tracker still sees the frames one by one, in
++            # order, with the same embeddings it would have had.
++            cleaned, crops_per_frame = [], []
++            for i in range(len(frames)):
++                det = outputs_batch[i]
++                if det is not None and len(det):
++                    det = det[~np.any(det[:, 0:4] < 1, axis=1)]
++                    det = det[(det[:, 2] - det[:, 0] >= 2) & (det[:, 3] - det[:, 1] >= 2)]
++                if det is None or not len(det):
++                    cleaned.append(None)
++                    crops_per_frame.append([])
++                    continue
++                height, width, _ = frames[i].shape
++                cleaned.append(det)
++                crops_per_frame.append([
++                    frames[i][max(0, int(y1)):min(height, int(y2)),
++                              max(0, int(x1)):min(width, int(x2))]
++                    for x1, y1, x2, y2, _ in det])
++
++            flat = [crop for frame_crops in crops_per_frame for crop in frame_crops]
++            embs_per_frame = [None] * len(frames)
++            _t = time.perf_counter()
++            if flat:
++                prepared = thread_map(
++                    lambda crop: im_transforms(
++                        image=cv2.cvtColor(crop, cv2.COLOR_BGR2RGB))['image'], flat)
++                stacked = torch.stack(prepared, dim=0).to(self.device, non_blocking=True)
++                all_embs = F.normalize(self.reid_model(stacked), p=2, dim=1)
++                all_embs = all_embs.cpu().detach().numpy()
++                at = 0
++                for i, frame_crops in enumerate(crops_per_frame):
++                    if frame_crops:
++                        embs_per_frame[i] = all_embs[at:at + len(frame_crops)]
++                        at += len(frame_crops)
++            spent["reid"] += time.perf_counter() - _t
++
+             for i in range(len(frames)):
+                 # Initialize per-frame variables before processing detections for the frame.
+                 batch_images = []
+@@ -496,39 +542,17 @@
+                 img_path = paths[i]
+ 
+                 height, width, _ = frame.shape
+-                det = outputs_batch[i]
+-                if det is None or len(det) == 0:
++                det = cleaned[i]
++                if det is None:
+                     continue
+-
+-                # [x1, y1, x2, y2, score] in original image coordinates
+-                rows_to_remove = np.any(det[:, 0:4] < 1, axis=1)
+-                det = det[~rows_to_remove]
+-                # drop degenerate boxes so every crop below is non-empty
+-                det = det[(det[:, 2] - det[:, 0] >= 2) & (det[:, 3] - det[:, 1] >= 2)]
+-                if not len(det):
++                embs = embs_per_frame[i]
++                if embs is None:
+                     continue
+ 
+-                # Crop detection boxes for re‑ID (batched per frame)
+-                cropped_imgs = [frame[max(0, int(y1)):min(height, int(y2)),
+-                                        max(0, int(x1)):min(width, int(x2))]
+-                                for x1, y1, x2, y2, _ in det]
+-                if not cropped_imgs:
+-                    continue
+-
+-                # Obtain re‑ID features (even though we will not use them for team clustering)
+-                # Convert crops from BGR to RGB for OSNet/Transforms
+-                images_tensor = []
+-                for crop in cropped_imgs:
+-                    crop_rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
+-                    images_tensor.append(im_transforms(image=crop_rgb)['image'])
+-                
+-                images_tensor = torch.stack(images_tensor, dim=0).to(self.device, non_blocking=True)
+-                embs = self.reid_model(images_tensor)
+-                embs = F.normalize(embs, p=2, dim=1)
+-                embs = embs.cpu().detach().numpy()
+-
+                 # Update tracker to obtain online targets
++                _t = time.perf_counter()
+                 online_targets = tracker.update(det, embs)
++                spent["track"] += time.perf_counter() - _t
+                 detection_info = [(j, t, t.last_tlwh, t.track_id) for j, t in enumerate(online_targets)]
+ 
+                 for j, t in enumerate(online_targets):
+@@ -567,11 +591,13 @@
+ 
+                 # Run batch inference for jersey classification if any crops are available.
+                 if batch_images:
++                    _t = time.perf_counter()
+                     if self.jersey_mode == 'CLIP':
+                         batch_results = self.jersey_batcher.predict(batch_images)
+                     else:
+                         batch_results = predict_role_and_jersey_batch(batch_images, self.jersey_model, self.jersey_tokenizer,
+                                                                       instruction)
++                    spent["jersey"] += time.perf_counter() - _t
+                     for idx, tid, result in zip(batch_indices, batch_track_ids, batch_results):
+                         detection_predictions[idx] = result
+                         jersey_cache[tid] = (frame_index, result)
+@@ -664,6 +690,12 @@
+         # Apply global color -> team assignment
+         # (Optional, if you want consistent color->team in all 3 dataframes)
+         track_df = global_color_team_assignment(track_df)
++
++        # the job keeps only the tail of the log, which tqdm fills, so the
++        # breakdown goes to a file the way the stitching stage's does
++        self.spent = {k: round(v, 1) for k, v in
++                      sorted(spent.items(), key=lambda kv: -kv[1])}
++        print("[track] %s" % self.spent, flush=True)
+ 
+         # Return them
+         return track_df, list(dataset.img_paths)
+@@ -731,8 +763,16 @@
+     print_gpu_memory_usage()
+ 
+     pipeline = GSRPipeline(cfg, device)
++    pipeline.spent = {}
+     
+     # Define datasets to process
+     data_sets = ['test'] # or ['challenge'], ['validation']
+     
+     pipeline.run(data_sets)
++
++    try:
++        with open(os.path.join(os.path.dirname(args.config), "track_timings.json"),
++                  "w", encoding="utf-8") as fh:
++            json.dump(pipeline.spent, fh, ensure_ascii=False, indent=1)
++    except OSError:
++        pass
+--- a/engine/IDATR/gen_tracklets.py
++++ b/engine/IDATR/gen_tracklets.py
+@@ -1,6 +1,5 @@
+ # This script produces tracklets given tracking results and original sequence frame as RGB images.
+ import argparse
+-from torchreid.utils import FeatureExtractor
+ 
+ import os
+ from tqdm import tqdm
+@@ -16,15 +15,25 @@
+ 
+ from Tracklet import Tracklet
+ 
++try:
++    from fast_prep import shared_reid, thread_map
++except ImportError:      # running outside the engine package
++    import sys
++    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
++    from fast_prep import shared_reid, thread_map
++
++
++# Frames are decoded and their crops prepared a block at a time, so the pool has
++# real work to spread; the GPU then gets one full batch instead of one call per
++# frame, which on this footage was twenty crops at a time.
++FRAME_BLOCK = 32
++REID_BATCH = 256
++
+ 
+ def generate_tracklets(cfg, datasets):
+     idatr_cfg = cfg['IDATR']
+     device = 'cuda' if torch.cuda.is_available() else 'cpu'
+-    extractor = FeatureExtractor(
+-        model_name='osnet_x1_0',
+-        model_path=idatr_cfg['MODEL_PATH'],
+-        device=device
+-    )
++    extractor = shared_reid('osnet_x1_0', idatr_cfg['MODEL_PATH'], device)
+     val_transforms = T.Compose([
+     T.Resize([256, 128]),
+     T.ToTensor(),
+@@ -42,45 +51,64 @@
+             seq_tracks = {}
+             frame_column = track_res[:, 0].astype(int)   # parsed once, not per frame
+ 
+-            for frame_id in range(1, last_frame + 1):
+-                if frame_id % 100 == 0:
+-                    logger.info(f'Processing frame {frame_id}/{last_frame}')
+-                inds = frame_column == frame_id
+-                frame_res = track_res[inds]
+-                img = Image.open(imgs[int(frame_id) - 1])
++            # One feature per track per frame, appended in frame order -- the
++            # order the detections went in, which is what append_feat pairs with.
++            pending_tensors, pending_tracks = [], []
+ 
+-                input_batch = None  # input batch to speed up processing
+-                tid2idx = {}
++            def flush():
++                if not pending_tensors:
++                    return
++                features = extractor(torch.stack(pending_tensors))
++                feats = features.cpu().detach().numpy()
++                for track_id, feat in zip(pending_tracks, feats):
++                    feat = feat / np.linalg.norm(feat)
++                    seq_tracks[track_id].append_feat(feat)
++                pending_tensors.clear()
++                pending_tracks.clear()
+ 
+-                for idx, (frame, track_id, l, t, w, h, score, role, jn, jc, team) in enumerate(frame_res):  # jn: jersey number, jc: jersey color
+-                    # Update tracklet with detection
+-                    frame, track_id, l, t, w, h, score = \
+-                        int(frame), int(track_id), float(l), float(t), float(w), float(h), float(score)
+-                    bbox = [l, t, w, h]
+-                    if track_id not in seq_tracks:
+-                        seq_tracks[track_id] = Tracklet(track_id, frame, score, bbox, role, jn, jc, team)
+-                    else:
+-                        seq_tracks[track_id].append_det(frame, score, bbox, role, jn, jc, team)
+-                    tid2idx[track_id] = idx
++            for block_start in range(1, last_frame + 1, FRAME_BLOCK):
++                block = list(range(block_start, min(block_start + FRAME_BLOCK, last_frame + 1)))
++                # decoding a frame is its slowest part and holds no lock
++                images = thread_map(
++                    lambda fid: Image.open(imgs[int(fid) - 1]).convert('RGB'), block)
+ 
+-                    im = img.crop((l, t, l + w, t + h)).convert('RGB')
+-                    im = val_transforms(im).unsqueeze(0)
+-                    if input_batch is None:
+-                        input_batch = im
+-                    else:
+-                        input_batch = torch.cat([input_batch, im], dim=0)
++                block_crops, block_tracks = [], []
++                for frame_id, img in zip(block, images):
++                    if frame_id % 100 == 0:
++                        logger.info(f'Processing frame {frame_id}/{last_frame}')
++                    inds = frame_column == frame_id
++                    frame_res = track_res[inds]
++                    if not len(frame_res):
++                        print(f"No detection at frame: {frame_id}")
++                        continue
+ 
+-                if input_batch is not None:
+-                    features = extractor(input_batch)  # len(features) == len(frame_res)
+-                    feats = features.cpu().detach().numpy()
++                    frame_crops = {}
++                    for idx, (frame, track_id, l, t, w, h, score, role, jn, jc, team) in enumerate(frame_res):  # jn: jersey number, jc: jersey color
++                        # Update tracklet with detection
++                        frame, track_id, l, t, w, h, score = \
++                            int(frame), int(track_id), float(l), float(t), float(w), float(h), float(score)
++                        bbox = [l, t, w, h]
++                        if track_id not in seq_tracks:
++                            seq_tracks[track_id] = Tracklet(track_id, frame, score, bbox, role, jn, jc, team)
++                        else:
++                            seq_tracks[track_id].append_det(frame, score, bbox, role, jn, jc, team)
++                        # a track seen twice in one frame keeps the last crop,
++                        # exactly as it did when the batch was indexed by track
++                        frame_crops[track_id] = img.crop((l, t, l + w, t + h))
+ 
+-                    # update tracklets with feature
+-                    for tid, idx in tid2idx.items():
+-                        feat = feats[tid2idx[tid]]
+-                        feat /= np.linalg.norm(feat)
+-                        seq_tracks[tid].append_feat(feat)
+-                else:
+-                    print(f"No detection at frame: {frame_id}")
++                    block_crops.extend(frame_crops.values())
++                    block_tracks.extend(frame_crops.keys())
++
++                if not block_crops:
++                    continue
++                # resize and normalise: PIL and numpy work, so the pool helps
++                prepared = thread_map(val_transforms, block_crops)
++                for tensor, track_id in zip(prepared, block_tracks):
++                    pending_tensors.append(tensor)
++                    pending_tracks.append(track_id)
++                    if len(pending_tensors) >= REID_BATCH:
++                        flush()
++            flush()
+ 
+             # save seq_tracks into pickle file
+             track_output_path = os.path.join(seq_dir, f'{seq_name}.pkl')
+@@ -101,4 +129,4 @@
+         cfg = yaml.safe_load(f)
+ 
+     data_sets = cfg['DATA_SETS']
+-    generate_tracklets(cfg, data_sets)
+\ No newline at end of file
++    generate_tracklets(cfg, data_sets)
+--- a/engine/tracklet_attributes.py
++++ b/engine/tracklet_attributes.py
+@@ -32,6 +32,7 @@
+ from sklearn.cluster import KMeans
+ from sklearn.metrics import silhouette_score
+ 
++from fast_prep import shared_reid, thread_map
+ from roster import (Roster, assign_numbers, correct_teams,
+                     match_clusters_to_teams)
+ 
+@@ -42,6 +43,7 @@
+ MAX_CROPS_PER_TRACK = 60      # largest crops of the tracklet
+ MAX_CROP_HEIGHT = 320         # close-ups carry no extra information for these heads
+ REID_CHUNK = 256
++FRAME_BLOCK = 32              # frames decoded at once when cutting crops
+ TORSO_TOP, TORSO_BOTTOM = 0.10, 0.60   # kit region of the box
+ MIN_TRACK_CROPS = 3
+ 
+@@ -59,29 +61,41 @@
+     """Returns crops, torso crops and the row index they belong to."""
+     img_dir = os.path.join(clip_dir, "img1")
+     crops, torsos, keep = [], [], []
+-    for frame_id, group in rows.groupby("frame"):
+-        image = cv2.imread(os.path.join(img_dir, "%06d.jpg" % int(frame_id)))
+-        if image is None:
+-            continue
+-        height, width = image.shape[:2]
+-        for idx, row in group.iterrows():
+-            x1, y1 = max(0, int(row.x)), max(0, int(row.y))
+-            x2 = min(width, int(row.x + row.w))
+-            y2 = min(height, int(row.y + row.h))
+-            if x2 - x1 < 4 or y2 - y1 < 8:
++    groups = list(rows.groupby("frame"))
++
++    def read(item):
++        return cv2.imread(os.path.join(img_dir, "%06d.jpg" % int(item[0])))
++
++    # Decoding is most of the cost here and releases the GIL, so frames are read
++    # a block at a time. A block, not the clip: a minute of 1080p is nine
++    # gigabytes of decoded frames, and each is only needed long enough to be
++    # cut. Cutting stays in frame order, so the output is unchanged.
++    for start in range(0, len(groups), FRAME_BLOCK):
++        block = groups[start:start + FRAME_BLOCK]
++        for (frame_id, group), image in zip(block, thread_map(read, block)):
++            if image is None:
+                 continue
+-            crop = image[y1:y2, x1:x2]
+-            if crop.shape[0] > MAX_CROP_HEIGHT:
+-                scale = MAX_CROP_HEIGHT / crop.shape[0]
+-                crop = cv2.resize(crop, (max(4, int(crop.shape[1] * scale)), MAX_CROP_HEIGHT),
+-                                  interpolation=cv2.INTER_AREA)
+-            box_h = y2 - y1
+-            ty1 = y1 + int(box_h * TORSO_TOP)
+-            ty2 = y1 + int(box_h * TORSO_BOTTOM)
+-            torso = image[ty1:max(ty1 + 2, ty2), x1:x2]
+-            crops.append(crop)
+-            torsos.append(torso)
+-            keep.append(idx)
++            height, width = image.shape[:2]
++            for idx, row in group.iterrows():
++                x1, y1 = max(0, int(row.x)), max(0, int(row.y))
++                x2 = min(width, int(row.x + row.w))
++                y2 = min(height, int(row.y + row.h))
++                if x2 - x1 < 4 or y2 - y1 < 8:
++                    continue
++                crop = image[y1:y2, x1:x2]
++                if crop.shape[0] > MAX_CROP_HEIGHT:
++                    scale = MAX_CROP_HEIGHT / crop.shape[0]
++                    crop = cv2.resize(crop, (max(4, int(crop.shape[1] * scale)), MAX_CROP_HEIGHT),
++                                      interpolation=cv2.INTER_AREA)
++                box_h = y2 - y1
++                ty1 = y1 + int(box_h * TORSO_TOP)
++                ty2 = y1 + int(box_h * TORSO_BOTTOM)
++                torso = image[ty1:max(ty1 + 2, ty2), x1:x2]
++                # the slices above are views into the frame, which is about to
++                # be dropped -- copy so the frame itself can be freed
++                crops.append(np.ascontiguousarray(crop))
++                torsos.append(np.ascontiguousarray(torso))
++                keep.append(idx)
+     return crops, torsos, keep
+ 
+ 
+@@ -295,7 +309,6 @@
+ 
+ 
+ def refine_tracklet_attributes(cfg, splits, device=None):
+-    from reid.torchreid.utils import FeatureExtractor
+     from yolox.utils.transforms import get_transforms
+     from jersey_model.CLIPFinetune import CLIPFinetune
+     from jersey_batch import get_number
+@@ -310,8 +323,7 @@
+     if roster is not None:
+         print("[attrs] заявка: %s — %s" % (roster.name, roster.describe()), flush=True)
+ 
+-    reid = FeatureExtractor(model_name="osnet_x1_0",
+-                            model_path=cfg["REID"]["MODEL_PATH"], device=str(device))
++    reid = shared_reid("osnet_x1_0", cfg["REID"]["MODEL_PATH"], device)
+     transforms = get_transforms(image_size=(256, 128))
+     jersey_model = CLIPFinetune()
+     jersey_model.load_state_dict(torch.load(cfg["CLIP"]["MODEL_PATH"], weights_only=False))
+@@ -340,9 +352,9 @@
+                 # of thousands of crops and one big tensor would not fit
+                 embeddings = []
+                 for start in range(0, len(crops), REID_CHUNK):
+-                    part = torch.stack([
+-                        transforms(image=cv2.cvtColor(c, cv2.COLOR_BGR2RGB))["image"]
+-                        for c in crops[start:start + REID_CHUNK]]).to(device)
++                    part = torch.stack(thread_map(
++                        lambda c: transforms(image=cv2.cvtColor(c, cv2.COLOR_BGR2RGB))["image"],
++                        crops[start:start + REID_CHUNK])).to(device)
+                     feats = reid(part)
+                     embeddings.append(F.normalize(feats, p=2, dim=1).cpu())
+                     del part
+@@ -350,17 +362,17 @@
+ 
+                 probs1, probs2 = [], []
+                 for start in range(0, len(crops), 96):
+-                    batch = torch.stack([
+-                        jersey_model.preprocess(
+-                            Image.fromarray(cv2.cvtColor(c, cv2.COLOR_BGR2RGB)))
+-                        for c in crops[start:start + 96]]).to(device)
++                    batch = torch.stack(thread_map(
++                        lambda c: jersey_model.preprocess(
++                            Image.fromarray(cv2.cvtColor(c, cv2.COLOR_BGR2RGB))),
++                        crops[start:start + 96])).to(device)
+                     out = jersey_model(batch)
+                     probs1.append(F.softmax(out["digit1_logits"].float(), 1).cpu())
+                     probs2.append(F.softmax(out["digit2_logits"].float(), 1).cpu())
+                 probs1 = torch.cat(probs1)
+                 probs2 = torch.cat(probs2)
+ 
+-            histograms = np.stack([_torso_histogram(t) for t in torsos])
++            histograms = np.stack(thread_map(_torso_histogram, torsos))
+ 
+             prtreid = None
+             if cfg.get("USE_PRTREID"):
+--- a/engine/jersey_batch.py
++++ b/engine/jersey_batch.py
+@@ -10,6 +10,8 @@
+ import clip
+ import torch
+ import torch.nn.functional as F
++
++from fast_prep import thread_map
+ 
+ ROLE_MAPPING = {0: "Player", 1: "Goalkeeper", 2: "Referee", 3: "Ball", 4: "Other"}
+ COMMON_COLORS = ["Red", "Blue", "Green", "Yellow", "White", "Black", "Orange",
+@@ -39,7 +41,10 @@
+         results = []
+         for start in range(0, len(pil_images), self.chunk):
+             part = pil_images[start:start + self.chunk]
+-            batch = torch.stack([self.model.preprocess(img) for img in part])
++            # CLIP's preprocess is a bicubic resize and a normalise per crop:
++            # CPU work that releases the GIL, and the single largest item in the
++            # tracking stage at 47 s of its 137 before it was spread out
++            batch = torch.stack(thread_map(self.model.preprocess, part))
+             batch = batch.to(self.device, non_blocking=True)
+             out = self.model(batch)
+ 
+--- /dev/null
++++ b/engine/fast_prep.py
+@@ -0,0 +1,75 @@
++"""Loading models once, and preparing crops on more than one core.
++
++The stitching stage was measured at 432 s for 7.6 s of football with the GPU at
++10% utilisation, so most of that time was not GPU work. Two causes, neither of
++them algorithmic:
++
++*The same network was loaded repeatedly.* ``gen_tracklets`` and
++``tracklet_attributes`` run in one process and each built its own OSNet -- ten
++seconds of weight loading, and a second copy in VRAM. They even reached the
++same file through two different import paths (``torchreid`` and
++``reid.torchreid``), which Python treats as two modules, so nothing was shared.
++``shared_reid`` gives the process one extractor per weights file.
++
++*Crops were prepared one at a time.* Decoding a frame, cropping a player and
++resizing him for the network is CPU work that releases the GIL, so it spreads
++across cores; done serially it left fifteen of sixteen idle while the GPU
++waited. ``thread_map`` runs it on a pool sized to the machine.
++
++Neither changes what the networks are shown, only when and on which core it is
++prepared.
++"""
++from __future__ import annotations
++
++import os
++from concurrent.futures import ThreadPoolExecutor
++
++_REID_CACHE: dict = {}
++_POOL: ThreadPoolExecutor | None = None
++# Beyond this the pool costs more in contention than it returns: the work is
++# already releasing the GIL and the GPU is the next thing to wait for.
++MAX_WORKERS = 8
++# Below this a pool is pure overhead. It is low because the items here are not
++# small: a CLIP preprocess is about 36 ms, against tens of microseconds to hand
++# it to a thread, and the jersey head is called with only the handful of crops
++# one frame holds.
++MIN_ITEMS = 3
++
++
++def workers() -> int:
++    return max(1, min(MAX_WORKERS, os.cpu_count() or 4))
++
++
++def pool() -> ThreadPoolExecutor:
++    global _POOL
++    if _POOL is None:
++        _POOL = ThreadPoolExecutor(max_workers=workers(), thread_name_prefix="prep")
++    return _POOL
++
++
++def thread_map(fn, items) -> list:
++    """Map over items in order, on the pool when there is enough to be worth it."""
++    items = list(items)
++    if len(items) < MIN_ITEMS:
++        return [fn(item) for item in items]
++    return list(pool().map(fn, items))
++
++
++def shared_reid(model_name: str, model_path, device):
++    """One FeatureExtractor per weights file per process.
++
++    Imported through a single canonical path so that callers reaching for
++    ``torchreid`` and callers reaching for ``reid.torchreid`` end up on the same
++    object instead of loading the file twice.
++    """
++    key = (model_name, str(model_path), str(device))
++    if key not in _REID_CACHE:
++        from torchreid.utils import FeatureExtractor
++
++        _REID_CACHE[key] = FeatureExtractor(
++            model_name=model_name, model_path=str(model_path), device=str(device)
++        )
++    return _REID_CACHE[key]
++
++
++__all__ = ["shared_reid", "thread_map", "pool", "workers"]

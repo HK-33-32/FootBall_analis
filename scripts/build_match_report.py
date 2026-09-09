@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -18,6 +19,12 @@ from football_intelligence.match_stats import (  # noqa: E402
     match_statistics,
     timeline,
 )
+from football_intelligence.reporting import (  # noqa: E402
+    ReportAnnotations,
+    ReportConfig,
+    detailed_report,
+    report_with_duration,
+)
 from football_intelligence.trajectories import (  # noqa: E402
     TrajectoryConfig,
     clean_ball_track,
@@ -30,7 +37,23 @@ def main() -> None:
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--title", default="")
     parser.add_argument("--fps", type=float, default=25.0)
+    parser.add_argument(
+        "--duration-ms", type=int, help="full source interval, including empty frames"
+    )
     parser.add_argument("--roster", type=Path, default=None)
+    parser.add_argument("--match-id", default="")
+    parser.add_argument(
+        "--video-source", default="", help="source video path/URI for event evidence"
+    )
+    parser.add_argument(
+        "--event-annotations",
+        type=Path,
+        help="validated event annotations; replaces geometric candidates in detailed JSON",
+    )
+    parser.add_argument("--report-config", type=Path, help="JSON overrides for ReportConfig")
+    parser.add_argument(
+        "--statistics-output", type=Path, help="also export standalone detailed statistics"
+    )
     parser.add_argument("--no-timeline", action="store_true")
     parser.add_argument(
         "--score-timeline",
@@ -74,11 +97,14 @@ def main() -> None:
         score_timeline=score_timeline,
         cards=cards,
     )
+    report = report_with_duration(report, args.duration_ms)
     report["title"] = args.title or args.predictions.parent.name
-    report["calibration"] = {
-        key: value for key, value in calibration.items() if key != "rejected"
-    }
+    report["calibration"] = {key: value for key, value in calibration.items() if key != "rejected"}
     report["source"] = str(args.predictions)
+    with args.predictions.open("rb") as prediction_stream:
+        report["predictions_sha256"] = hashlib.file_digest(prediction_stream, "sha256").hexdigest()
+    if args.video_source:
+        report["video_source"] = args.video_source
 
     if args.roster and args.roster.is_file():
         roster = json.loads(args.roster.read_text(encoding="utf-8"))
@@ -94,6 +120,32 @@ def main() -> None:
                 for team in roster.get("teams", [])
             ],
         }
+
+    annotations = (
+        ReportAnnotations.model_validate_json(args.event_annotations.read_text("utf-8"))
+        if args.event_annotations
+        else None
+    )
+    report_config = (
+        ReportConfig.model_validate_json(args.report_config.read_text("utf-8"))
+        if args.report_config
+        else ReportConfig()
+    )
+    report["detailed_statistics"] = detailed_report(
+        report,
+        annotations=annotations,
+        match_id=args.match_id or args.predictions.parent.name,
+        config=report_config,
+        predictions=predictions,
+    )
+    if args.statistics_output:
+        args.statistics_output.parent.mkdir(parents=True, exist_ok=True)
+        args.statistics_output.write_text(
+            json.dumps(
+                report["detailed_statistics"], ensure_ascii=False, indent=2, allow_nan=False
+            ),
+            encoding="utf-8",
+        )
 
     if not args.no_timeline:
         ball = [
@@ -125,7 +177,7 @@ def main() -> None:
     print(
         f"{report['title']}: {len(report['players'])} identities, "
         f"{report['frames_with_game_state']} frames with game state "
-        f"({report['coverage']:.0%} of the clip), ball {report['ball']['kept']}/"
+        f"({report['coverage']:.0%}, {report['coverage_basis']}), ball {report['ball']['kept']}/"
         f"{report['ball']['observed']} kept, {calibration.get('frames_rejected', 0)} frames "
         f"dropped as uncalibrated -> {args.output} ({size_kb:.0f} KB)"
     )

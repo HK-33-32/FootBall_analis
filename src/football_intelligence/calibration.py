@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
-from scipy.stats import spearmanr
+from scipy.stats import rankdata
 
 Detection = dict[str, Any]
 
@@ -55,11 +55,16 @@ def _frame_geometry(rows: Sequence[tuple[float, float, float]]) -> tuple[float, 
     image_x = np.array([row[0] for row in rows], dtype=float)
     pitch_x = np.array([row[1] for row in rows], dtype=float)
     pitch_y = np.array([row[2] for row in rows], dtype=float)
+    image_rank = rankdata(image_x)
+
     def rank_correlation(values: np.ndarray) -> float:
         # a constant axis has no defined correlation, and scipy warns about it
         if values.min() == values.max() or image_x.min() == image_x.max():
             return 0.0
-        result = spearmanr(image_x, values).correlation
+        # Same average ranks and Pearson correlation as spearmanr, without
+        # computing an unused p-value and ranking image_x twice per frame.
+        # spearmanr returns [1, 0]; the other triangle can differ by one ULP.
+        result = np.corrcoef(image_rank, rankdata(values))[1, 0]
         return 0.0 if np.isnan(result) else float(result)
 
     along = rank_correlation(pitch_x)

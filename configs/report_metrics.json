@@ -1,0 +1,14 @@
+{
+  "pitch_length_m": 105.0,
+  "pitch_width_m": 68.0,
+  "penalty_area_depth_m": 16.5,
+  "penalty_area_width_m": 40.32,
+  "short_pass_max_m": 10.0,
+  "medium_pass_max_m": 40.0,
+  "forward_cosine": 0.5,
+  "progressive_own_half_m": 30.0,
+  "progressive_cross_half_m": 15.0,
+  "progressive_opponent_half_m": 10.0,
+  "ppda_zone_depth_m": 40.0,
+  "interval_ms": 900000
+}

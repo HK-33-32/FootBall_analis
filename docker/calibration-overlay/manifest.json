@@ -1,0 +1,11 @@
+{
+  "schema_version": "core-overlay.v1",
+  "base_image": "football-core:optimized-20260908",
+  "patch_sha256": "38d5742c3899c411d1bbacd98f48b2ce5b40a14c8e5ed4f99c593a202d6d8dee",
+  "files": {
+    "engine/kpts.py": {
+      "before": "6362501bdc23f83263af1aa16784761013b975efb18e8b9755aa86587c2c899f",
+      "after": "3d3e2a153e883c6f489881dad8c94378e4c08938c99757888a87f2019e4bb6cd"
+    }
+  }
+}

@@ -366,6 +366,7 @@
         <h1 id="title">Телеметрия матча</h1>
         <p class="subtitle" id="subtitle"></p>
       </div>
+      <button id="export-json" type="button">Статистика JSON</button>
       <button id="theme" type="button" aria-label="Переключить тему">Тема</button>
     </div>
     <div class="facts" id="facts"></div>
@@ -528,6 +529,16 @@
 (function () {
   "use strict";
   const DATA = JSON.parse(document.getElementById("match-data").textContent);
+  document.getElementById("export-json").addEventListener("click", () => {
+    const payload = DATA.detailed_statistics || DATA;
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {type: "application/json;charset=utf-8"});
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "match-statistics.json";
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  });
   const FPS = DATA.fps || 25;
   const HALF_L = 52.5, HALF_W = 34;
   const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -549,7 +560,7 @@
   const lastFrame = DATA.last_frame || (frames[frames.length - 1] || 1);
   const totalFrames = Math.max(1, lastFrame - firstFrame + 1);
   const covered = new Set(frames);
-  const duration = totalFrames / FPS;
+  const duration = DATA.source_duration_ms ? DATA.source_duration_ms / 1000 : totalFrames / FPS;
 
   /* ----------------------------------------------------------------- шапка */
   document.getElementById("title").textContent = DATA.title || "Телеметрия матча";
@@ -562,7 +573,7 @@
   const outfield = players.filter((p) => p.role !== "referee");
   document.getElementById("facts").innerHTML = [
     [outfield.length, "идентичностей"],
-    [Math.round((DATA.coverage || 0) * 100) + "%", "клипа с состоянием"],
+    [Math.round((DATA.coverage || 0) * 100) + "%", DATA.coverage_basis === "source_duration" ? "клипа с состоянием" : "диапазона наблюдений"],
     [duration.toFixed(1) + " с", "длительность"],
     [DATA.ball ? DATA.ball.top_speed_kmh + " км/ч" : "&mdash;", "быстрейший мяч"],
     [DATA.ball ? DATA.ball.kept + "/" + DATA.ball.observed : "&mdash;", "точек мяча оставлено"],
@@ -953,7 +964,7 @@
           <div><b>${(player.thirds.attacking * 100).toFixed(0)}%</b><span>чужая треть</span></div>
           <div><b>${player.time_running_s} с</b><span>быстрее ${DATA.thresholds.running_speed_kmh} км/ч</span></div>
           <div><b>${player.detections}</b><span>детекций</span></div>
-          <div><b>${(player.coverage * 100).toFixed(0)}%</b><span>клипа</span></div>
+          <div><b>${(player.coverage * 100).toFixed(0)}%</b><span>${DATA.coverage_basis === "source_duration" ? "клипа" : "диапазона наблюдений"}</span></div>
           <div><b>${player.accelerations || 0} / ${player.decelerations || 0}</b><span>разгон / торможение</span></div>
           <div><b>${player.top_speed_at || "&mdash;"}</b><span>пик скорости</span></div>
           <div><b>${player.width_used_m || 0} &times; ${player.depth_used_m || 0} м</b><span>зона действий</span></div>

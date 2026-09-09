@@ -1,0 +1,19 @@
+# Complete code-only release; models remain inherited/mounted, never copied here.
+ARG CORE_IMAGE=football-core:1.0.0
+FROM ${CORE_IMAGE}
+COPY docker/core-overlay /opt/core-overlay
+COPY docker/calibration-overlay /opt/calibration-overlay
+COPY docker/projection-overlay /opt/projection-overlay
+COPY docker/weight-io-overlay /opt/weight-io-overlay
+COPY docker/clip-loading-overlay /opt/clip-loading-overlay
+COPY docker/apply_core_overlay.py /opt/apply_core_overlay.py
+RUN python /opt/apply_core_overlay.py
+RUN python /opt/apply_core_overlay.py --overlay /opt/calibration-overlay
+RUN python /opt/apply_core_overlay.py --overlay /opt/projection-overlay
+RUN python /opt/apply_core_overlay.py --root /opt/venv/lib/python3.12/site-packages/rfdetr --overlay /opt/weight-io-overlay
+RUN python /opt/apply_core_overlay.py --overlay /opt/clip-loading-overlay
+COPY src/football_intelligence/calibration_sampling.py /app/engine/fi_calibration_sampling.py
+COPY docker/core_entrypoint.py /opt/core_entrypoint.py
+ENTRYPOINT ["python", "/opt/core_entrypoint.py"]
+CMD ["serve"]
+# Calibration seed remains opt-in; no inference precision or threshold changes.

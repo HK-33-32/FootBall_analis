@@ -1,0 +1,6 @@
+# One-factor experiment: keep full weight validation, increase MD5 read block size.
+ARG CORE_IMAGE=football-core:performance-20260908
+FROM ${CORE_IMAGE}
+COPY docker/weight-io-overlay /opt/weight-io-overlay
+COPY docker/apply_core_overlay.py /opt/apply_core_overlay.py
+RUN python /opt/apply_core_overlay.py --root /opt/venv/lib/python3.12/site-packages/rfdetr --overlay /opt/weight-io-overlay

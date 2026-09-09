@@ -1,4 +1,4 @@
-FROM python:3.12-slim-bookworm AS runtime
+FROM python:3.12-slim-bookworm@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254 AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -10,10 +10,13 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY pyproject.toml README.md /app/
+COPY requirements-docker.lock /app/
+RUN pip install --requirement requirements-docker.lock
+
+COPY pyproject.toml README.md LICENSE /app/
 COPY configs /app/configs
 COPY src /app/src
-RUN pip install .
+RUN pip install --no-deps .
 
 RUN useradd --create-home --uid 10001 football \
     && mkdir -p /data/runtime \

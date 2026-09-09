@@ -1,0 +1,36 @@
+{
+  "schema_version": "core-overlay.v1",
+  "base_image": "football-core:1.0.0",
+  "base_image_id": "sha256:17f66f8619db3017c50dd5c031b4d1c9aaf2ccbab027ee802532acada5d52720",
+  "patch_sha256": "8abcd2a943adf50737ae487a2fa52a3b70110dba30af632689a891a2ddeedf83",
+  "files": {
+    "core/jobs.py": {
+      "before": "3762b008543b7b76be033e9596be476421f5ef650e3f1ecdfd0cabac8ee91b0d",
+      "after": "c550aeafd76eb80b49aad05753d10494cc79d808402c85ad38d3838fd33baf38"
+    },
+    "core/runners/run_idatr.py": {
+      "before": "31365956cbdee9e45c9195faf1381610a9467992edd86d24e28238b1a3120ef0",
+      "after": "a1e862574a376945929b44ee432df4e2d50afba9aa819b08e5b404b59cdfc422"
+    },
+    "engine/inference_soccernetGSR.py": {
+      "before": "ecb4670637b639a5ecd96f609e2795a0755ec373eb34aa1d4b7705f6493ead4b",
+      "after": "e5923852093cd8ffceb72e654263adeedde0dd797b3da100208aba22d4c80273"
+    },
+    "engine/IDATR/gen_tracklets.py": {
+      "before": "707db1b566b9d9aeb79e408dca5476abe825a8c6e61ba9988776c61b493559f4",
+      "after": "155f5f042f6173bc6f14fb7f68822d242dc035b1a64357608221096550db10ba"
+    },
+    "engine/tracklet_attributes.py": {
+      "before": "e00ec170d91829218de357d8823454c82968471899091cf87be22277db00bd11",
+      "after": "dcea0e10312e3f7367a58959d39d7701e0a0ce7114641f03c6ec1a5cb76bb675"
+    },
+    "engine/jersey_batch.py": {
+      "before": "f6be424dc6e5ed585bf7505b7af2b068f8864f2ea9cb952ebb8e2aa92d985766",
+      "after": "a9ac1f8341a7c2b96c5241f6427afd1309887b13bbc5383e12370d07fd8f6581"
+    },
+    "engine/fast_prep.py": {
+      "before": null,
+      "after": "279c9a06c685d6d34f9bf2b840bf4e40ab6bfcba43b9b82ed5b34a50d93cfd71"
+    }
+  }
+}

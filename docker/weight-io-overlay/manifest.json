@@ -1,0 +1,16 @@
+{
+  "schema_version": "core-overlay.v1",
+  "base_image_id": "sha256:f444a3fee87e9662c9585107f1cd9c95048651ca1aafbdc6e542f03eb9e94109",
+  "patch_sha256": "87b18024ca224c7e92b97f196764d5007ee687a1e63c874524aedc3350825031",
+  "config": {
+    "schema_version": "core-io.v1",
+    "rfdetr_md5_read_bytes": 1048576,
+    "note": "Full-file integrity checks are retained; only read block size changes."
+  },
+  "files": {
+    "utilities/files.py": {
+      "before": "60a4c28d80739500fa44d670f13a477708f484193555732a52be40c9e7c757c6",
+      "after": "61918052027c5c3201ac3dbf68c1869ff73cdbe131c0482b58ac5350ff6ac956"
+    }
+  }
+}

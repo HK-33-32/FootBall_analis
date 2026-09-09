@@ -1,0 +1,42 @@
+{
+  "name": "ЧМ-2022, финал: стартовые составы",
+  "note": "Только вышедшие в старте. Для первого тайма это самый узкий и самый точный список; после замен нужен вариант с полной заявкой.",
+  "teams": [
+    {
+      "team": "Argentina",
+      "short": "ARG",
+      "players": {
+        "23": "E. Martínez",
+        "26": "Molina",
+        "13": "Romero",
+        "19": "Otamendi",
+        "3": "Tagliafico",
+        "7": "De Paul",
+        "24": "E. Fernández",
+        "20": "Mac Allister",
+        "11": "Di María",
+        "10": "Messi",
+        "9": "Álvarez"
+      },
+      "goalkeepers": ["23"]
+    },
+    {
+      "team": "France",
+      "short": "FRA",
+      "players": {
+        "1": "Lloris",
+        "5": "Koundé",
+        "4": "Varane",
+        "18": "Upamecano",
+        "22": "T. Hernández",
+        "8": "Tchouaméni",
+        "14": "Rabiot",
+        "7": "Griezmann",
+        "11": "Dembélé",
+        "9": "Giroud",
+        "10": "Mbappé"
+      },
+      "goalkeepers": ["1"]
+    }
+  ]
+}

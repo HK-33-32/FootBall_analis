@@ -193,3 +193,26 @@ def test_an_interrupted_run_is_offered_and_can_be_resumed(tmp_path, monkeypatch)
         assert resumed.status_code == 202
         assert resumed.json()["id"] == "halfway"
         assert client.post("/api/v1/analyses/nope/resume").status_code == 404
+
+
+def test_detailed_statistics_endpoint_keeps_legacy_report_intact(tmp_path, monkeypatch):
+    import json
+
+    directory = tmp_path / "reports" / "test-only-match"
+    directory.mkdir(parents=True)
+    report = {"fps": 25, "first_frame": 1, "last_frame": 100, "players": [],
+              "teams": {"left": {}, "right": {}}, "events": [], "title": "Test"}
+    saved = directory / "match_report.json"
+    saved.write_text(json.dumps(report), encoding="utf-8")
+    original = saved.read_bytes()
+    monkeypatch.setenv("FI_REPORTS_DIR", str(directory.parent))
+    with TestClient(create_app(tmp_path / "runtime")) as client:
+        response = client.get("/api/v1/reports/test-only-match/statistics")
+        assert response.status_code == 200
+        assert response.json()["schema_version"] == "1.0.0"
+        assert response.json()["teams"]["left"]["shots"]["total"]["value"] is None
+        assert client.get("/api/v1/reports/missing/statistics").status_code == 404
+        assert client.get("/api/v1/reports/test-only-match").json() == report
+        page = client.get("/matches/test-only-match")
+        assert 'id="export-json"' in page.text
+    assert saved.read_bytes() == original

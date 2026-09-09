@@ -1,0 +1,61 @@
+{
+  "schema_version": "weights-bundle.v1",
+  "bundle_version": "2026-09-09",
+  "total_size_bytes": 11277190631,
+  "files": [
+    {
+      "path": "checkpoints/CLIP_Jersey.pth",
+      "size_bytes": 936987722,
+      "sha256": "c068865c6ff28ff8b2dd7e90d2cfd37b72dfe4e117a3be79eb88a5f98e8afa1e",
+      "purpose": "role and jersey classification"
+    },
+    {
+      "path": "checkpoints/Qwen2.5-VL-7B-Instruct-Q8_0.gguf",
+      "size_bytes": 8098523680,
+      "sha256": "e191b017a8406c60f59c3bd023964aa2dea83ae0ab89caa57ba3290b7379846c",
+      "purpose": "optional local jersey VLM"
+    },
+    {
+      "path": "checkpoints/SoccernetGSR_EfficientNet_Best.pth",
+      "size_bytes": 148893763,
+      "sha256": "3998b0a734c4c595c896d5491ee2f3e062ac24dc0e08ee2f19a00cbaded00cc9",
+      "purpose": "pitch calibration"
+    },
+    {
+      "path": "checkpoints/mmproj-Qwen2.5-VL-7B-Instruct-f16.gguf",
+      "size_bytes": 1354162912,
+      "sha256": "c24a7f5fcfc68286f0a217023b6738e73bea4f11787a43e8238d4bb1b8604cde",
+      "purpose": "optional local jersey VLM projector"
+    },
+    {
+      "path": "checkpoints/osnet_x1_0_market_256x128_amsgrad_ep150_stp60_lr0.0015_b64_fb10_softmax_labelsmooth_flip.pth",
+      "size_bytes": 10399605,
+      "sha256": "2809d3227f7d078f6045f7feb874a34d0684f0e0057b264b99adccf7d4519154",
+      "purpose": "optional fallback ReID"
+    },
+    {
+      "path": "checkpoints/prtreid/hrnetv2_w32_imagenet_pretrained.pth",
+      "size_bytes": 165587602,
+      "sha256": "dc9eeb4f307e3f9bd6e7a13e546962bd8c578db1ca9caed6f7fff71770beb7bb",
+      "purpose": "part-based ReID backbone"
+    },
+    {
+      "path": "checkpoints/prtreid/prtreid-soccernet-baseline.pth.tar",
+      "size_bytes": 396287605,
+      "sha256": "1304562c4c930a4a54bbf2d44e221eb911fe31408f6875c5058b2d6ed621cf3b",
+      "purpose": "SoccerNet part-based ReID"
+    },
+    {
+      "path": "checkpoints/sports_model.pth.tar-60",
+      "size_bytes": 30393613,
+      "sha256": "8d5b2fd8763db34c2aad69810466adf413f0426d9f8119d322227e0e639c5fbd",
+      "purpose": "tracking ReID"
+    },
+    {
+      "path": "rfdetr/models/rf-detr-large-2026.pth",
+      "size_bytes": 135954129,
+      "sha256": "0f4e20e19a99c0f8a62b5685f57f6c8b5c371c59081feda6752a0561a79ccf38",
+      "purpose": "RF-DETR player and ball detector"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "schema_version": "core-overlay.v1",
+  "base_image_id": "sha256:ca763f2e495376aaffb53ec62399e048af0608485d35e0f895504f1ea77d97a6",
+  "patch_sha256": "7aa2f463133bf53b03620406196f75e157018562a7c7e14449750eca0185f9cc",
+  "files": {
+    "engine/jersey_model/CLIPFinetune.py": {
+      "before": "5193f253fe3f90effa6ccf6847db4daf1ca820fd9dacedc131b9e66adc8bad05",
+      "after": "bbcf41030f3f04f481e989e5669e3f6c121b8d504b7ce3fd2c94a76c63709bd2"
+    },
+    "engine/inference_soccernetGSR.py": {
+      "before": "e5923852093cd8ffceb72e654263adeedde0dd797b3da100208aba22d4c80273",
+      "after": "0c7caaf369468e240f85dc4aa1097894b26522adf833469f432438fae7fb8c30"
+    },
+    "engine/tracklet_attributes.py": {
+      "before": "dcea0e10312e3f7367a58959d39d7701e0a0ce7114641f03c6ec1a5cb76bb675",
+      "after": "e9c8ac8673ab18a2027fbed69834ad909098eef5c9fdf2caac6e5b691aea4d74"
+    },
+    "engine/fi_clip_loading.py": {
+      "before": null,
+      "after": "84ed27e24d5587f290b166f33610c1c2c61a55b3852eb8ef9a39f4d07b0e27a2"
+    }
+  },
+  "loader_version": "clip-direct-state-v1",
+  "supported_backbone": "ViT-L/14"
+}

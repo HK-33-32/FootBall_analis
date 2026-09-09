@@ -10,7 +10,83 @@
 
 ---
 
+## Start in one minute
+
+Requirements: Docker Desktop (Windows/macOS) or Docker Engine with Compose v2
+(Linux). Clone the repository, then run one command from its root:
+
+```powershell
+# Windows PowerShell
+.\scripts\quickstart.ps1
+```
+
+```bash
+# Linux/macOS
+sh scripts/quickstart.sh
+```
+
+Open <http://localhost:8080>. This reproducibly starts the API, report viewer,
+Argentina–France roster editor and debugging frontend. Verify it directly:
+
+```bash
+curl http://localhost:8080/api/v1/health
+```
+
+The repository includes the complete optimized Football Core source under
+`services/perception`; it intentionally contains no match footage, SoccerNet
+archives or model weights. A clean clone therefore starts quickly in standalone
+viewer/control-plane mode and reports perception as `not_configured`; it never
+fabricates analysis. To download the public core weights and analyze a new video,
+use the GPU quick start in [Installation](docs/INSTALL.md). To view an existing
+result, put its `match_report.json` and video in a subdirectory of `runs/`.
+
+Useful commands:
+
+```bash
+docker compose logs -f api
+docker compose down
+python -m pytest
+```
+
+Contributing and releasing: [installation](docs/INSTALL.md),
+[contribution rules](CONTRIBUTING.md), [publication checklist](docs/PUBLISHING.md),
+[security policy](SECURITY.md), and [third-party boundaries](THIRD_PARTY_NOTICES.md).
+
+---
+
 ## Executable implementation
+
+September 2026: [detailed JSON statistics](docs/REPORT_SCHEMA.md) now mirror the
+major content groups of the supplied match report, with evidence/coverage labels
+and explicit unavailable fields. The viewer exports JSON, and new analyses save
+per-stage wall-time traces (`timings_<attempt>.json`). For measured CPU/video
+optimizations and their limits, see [the performance report](docs/PERFORMANCE_20260907.md).
+
+GPU continuation: [the 8 September report](docs/PERFORMANCE_20260908.md) records
+a 2.04x short-clip speedup from packaging the previously unbaked core optimizations.
+Image-space detections/identities agree exactly; legacy calibration randomness
+prevents full output equality. Native SNGS-021 raw GS-HOTA remains approximately
+50.53. This is not a full-match or SOTA claim. Detailed JSON now uses true source
+duration for coverage when available (`--duration-ms` in the report CLI).
+
+The [startup experiment](docs/STARTUP_20260908.md) measured 6.56x faster complete
+RF-DETR weight hashing with identical digests. Observed median initialization was
+84.6 versus 47.5 s in the initial series, with identical tracking outputs, but
+changing host workloads prevent a precise causal whole-startup speedup claim. Full weight
+verification remains enabled; RF-DETR
+reads larger blocks. That release is retained as `football-core:startup-release-20260908`
+using `docker/Dockerfile.core-startup`. This is not a new
+whole-match timing or accuracy claim.
+
+The [CLIP loading follow-up](docs/CLIP_LOADING_20260909.md) eliminates the redundant
+base-model archive load at both tracking and attribute-refinement sites. All 460
+state entries and real-crop outputs match exactly. The native 7.6 s development
+pair took 195.2 versus 173.4 s with all 2,664 predictions identical, including
+pitch coordinates under an explicit experimental calibration seed. This is one
+short pair, not a full-match speed or accuracy claim. That immutable image remains
+the benchmark reference; Compose now builds the equivalent runtime from the integrated
+`services/perception` source. Production calibration seed remains unset. Weights,
+inference precision and thresholds are unchanged.
 
 The repository now includes typed Player Memory, an inspectable global identity solver, strict schema-valid semantic VLM calls, uncertainty-triggered second-pass analysis, content-addressed inference caching, SQLite Match Memory, a FastAPI control plane, a debugging frontend and Docker execution. The UI accepts a complete match roster as JSON, includes the Argentina–France 2022 final preset, can restrict early clips to the starting XI, and plays the rendered annotated result alongside measured/heuristic statistics with explicit labels.
 
@@ -22,30 +98,39 @@ pytest
 docker compose up -d --build api
 ```
 
-Open `http://localhost:8080`. The full profile expects the measured legacy Football Core image plus a local Qwen3-VL server:
+Open `http://localhost:8080`. The optimized perception image now builds directly
+from `services/perception`, without any external source checkout or base image.
+On a 16 GB GPU start perception only; do not
+co-launch a separate large VLM (measured core peak is already about 14.4 GB):
 
 ```powershell
+$env:FI_CORE_URL="http://perception:8000"
 $env:FI_PERCEPTION_URL="http://perception:8000"
-$env:FI_VLM_BASE_URL="http://vlm:8000"
-docker compose --profile full up -d
+# Reuse this workspace's existing benchmark cache if available:
+$env:FI_CORE_CACHE="./data/runtime/gpu_20260908/cache"
+docker compose --profile full up -d --build api perception
 ```
 
-The supplied legacy source uses a two-stage image so weights stay outside this
-repository. Build the local weights layer first, then the CUDA 12.8 runtime:
-
-```powershell
-Set-Location C:\Users\Andrei\Documents\Football_grade\football_core
-docker build -f Dockerfile.weights -t football-core-weights:1.0.0 .
-docker build --build-arg WEIGHTS_IMAGE=football-core-weights:1.0.0 `
-  --build-arg WITH_VLM=1 --build-arg WITH_YOLOX=0 `
-  --build-arg CUDA_ARCHS=120 -t football-core:1.0.0 .
-docker run --rm --gpus all football-core:1.0.0 check
-```
-
-Model weights and raw SoccerNet media are mounted/cached runtime data and are
-not committed or baked into the application image. The first RF-DETR launch
+No weights or raw SoccerNet media are committed or added to the application or
+perception image. Runtime caches are mounted under `./weights`. The first RF-DETR launch
 may populate an upstream backbone cache; benchmark metadata must distinguish a
 cold start from steady-state inference.
+
+For the simplest GPU setup on Windows, run:
+
+```powershell
+.\scripts\quickstart-gpu.ps1
+```
+
+It builds the integrated source, downloads the three public core checkpoints when
+available, verifies CUDA and starts `api + perception`. Qwen GGUF files remain
+optional and manual; without them the trained CLIP jersey head is used explicitly.
+For air-gapped installation or transfer of the complete 10.5 GiB model set, create
+one hash-verified external TAR and install it with `scripts/install-gpu.ps1`; see
+[Full offline weight bundle](docs/INSTALL.md#full-offline-weight-bundle).
+
+The `vlm` service is optional and requires separate GPU capacity or non-overlapping
+execution. Select it explicitly only when that memory budget is available.
 
 Existing development artifacts can be imported without rerunning perception:
 
@@ -227,9 +312,9 @@ with `FI_PORT`:
 $env:FI_REPORTS="D:\matches"; $env:FI_PORT="9000"; docker compose up -d api
 ```
 
-The reports directory is mounted read-only -- the viewer shows finished work
-and never writes to it. Analysing a new match still runs on the host, since it
-needs the perception container and a GPU. The older evidence lab, which drives
+The default reports directory is writable so new analyses can publish reports.
+Mount it read-only for a viewer-only deployment. Analysis uses the shared media
+volume and the GPU perception service. The older evidence lab, which drives
 the job-level pipeline, stays at `/lab`.
 
 To look at a result rather than a number, `scripts/render_annotated_clip.py`

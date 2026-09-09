@@ -1,0 +1,24 @@
+# Isolated GPU benchmark runner: no API frontend, VLM service or unrelated stack.
+services:
+  core:
+    image: "${CORE_PROFILE_IMAGE:-football-core:clip-release-20260909}"
+    container_name: "${CORE_PROFILE_CONTAINER:-fi-core-profile}"
+    ports:
+      - "127.0.0.1:${CORE_PROFILE_PORT:-8012}:8000"
+    environment:
+      FG_QUEUE_WORKERS: "1"
+    volumes:
+      - "${CORE_PROFILE_ROOT:-./data/runtime/core-profile}/storage:/data"
+      - ./data/perception_benchmark/media:/media:ro
+      - ./data/soccernet/valid:/soccernet:ro
+      - "${CORE_PROFILE_CACHE:-./data/runtime/core-profile/cache}/clip:/root/.cache/clip"
+      - "${CORE_PROFILE_CACHE:-./data/runtime/core-profile/cache}/torch:/opt/weights/torch"
+      - "${CORE_PROFILE_CACHE:-./data/runtime/core-profile/cache}/rfdetr:/opt/weights/rfdetr"
+    shm_size: 8gb
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

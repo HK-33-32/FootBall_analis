@@ -1,0 +1,5 @@
+# Isolated candidate: remove redundant base-CLIP archive loading, not model parameters.
+ARG CORE_IMAGE=football-core:startup-release-20260908
+FROM ${CORE_IMAGE}
+COPY docker/clip-loading-overlay /opt/clip-loading-overlay
+RUN python /opt/apply_core_overlay.py --overlay /opt/clip-loading-overlay

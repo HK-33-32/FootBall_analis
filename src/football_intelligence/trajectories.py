@@ -72,6 +72,8 @@ def longest_reachable_run(
         return []
     best = [1] * count
     previous = [-1] * count
+    frame_array = np.asarray(frames, dtype=np.float64)
+    point_array = np.asarray(points, dtype=np.float64)
     # Only look back as far as a body could plausibly have come from. Scanning
     # every earlier detection is quadratic: invisible on a 30-second clip, and
     # twelve hours on a 90-minute one.
@@ -80,15 +82,18 @@ def longest_reachable_run(
     for later in range(count):
         while frames[later] - frames[first] > window:
             first += 1
-        for earlier in range(first, later):
-            gap = (frames[later] - frames[earlier]) / config.fps
-            if gap <= 0:
-                continue
-            reach = max_speed_m_s * gap + config.step_tolerance_m
-            distance = float(np.hypot(*(np.subtract(points[later], points[earlier]))))
-            if distance <= reach and best[earlier] + 1 > best[later]:
-                best[later] = best[earlier] + 1
-                previous[later] = earlier
+        if first == later:
+            continue
+        gaps = (frame_array[later] - frame_array[first:later]) / config.fps
+        delta = point_array[later] - point_array[first:later]
+        distances = np.hypot(delta[:, 0], delta[:, 1])
+        reachable = (gaps > 0) & (distances <= max_speed_m_s * gaps + config.step_tolerance_m)
+        scores = np.where(reachable, best[first:later], 0)
+        # argmax retains the original earliest-predecessor tie-breaking.
+        winner = int(np.argmax(scores))
+        if scores[winner] > 0:
+            best[later] = int(scores[winner]) + 1
+            previous[later] = first + winner
     end = int(np.argmax(best))
     chain = []
     while end != -1:

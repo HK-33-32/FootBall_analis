@@ -19,7 +19,7 @@ def check_url(url: str) -> str:
 
 
 def main() -> None:
-    legacy = Path(os.environ.get("FI_LEGACY_WEIGHTS", "../../Football_grade/football_core/weights"))
+    legacy = Path(os.environ.get("FI_WEIGHTS_DIR", "./weights"))
     checkpoints = legacy / "checkpoints"
     expected = [
         "SoccernetGSR_EfficientNet_Best.pth",

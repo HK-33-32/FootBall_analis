@@ -23,6 +23,7 @@ day.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import subprocess
@@ -39,6 +40,7 @@ from .gamestate import RefinementConfig, VideoFrames, refine_predictions
 from .longmatch import ChunkConfig, merge_chunks, plan_chunks
 from .match_stats import StatsConfig, match_statistics
 from .playability import PlayabilityConfig, screen
+from .reporting import ReportConfig, detailed_report, report_with_duration
 from .trajectories import TrajectoryConfig
 
 # Measured against the football-core backend after its per-frame model calls
@@ -74,6 +76,7 @@ class AnalysisConfig:
     chunk_s: float = 60.0
     min_grass_share: float = 0.40
     poll_s: float = 3.0
+    report_config: ReportConfig = field(default_factory=ReportConfig)
     # A pause between chunks. Zero by default; raise it on a machine that grows
     # unstable under hours of unbroken all-core load.
     cooldown_s: float = 0.0
@@ -260,6 +263,29 @@ class Analysis:
         self.error: str | None = None
         self.report_path: Path | None = None
         self._stop = threading.Event()
+        self.stage_timings: dict[str, dict[str, float | int]] = {}
+        self.performance_path = (
+            Path(config.reports_dir) / self.id / f"timings_{uuid.uuid4().hex[:8]}.json"
+        )
+
+    def _timed(self, stage: str, operation: Callable, *args, **kwargs):
+        """Wall time, including failures; never call a core round-trip GPU compute time."""
+        started = time.perf_counter()
+        try:
+            return operation(*args, **kwargs)
+        finally:
+            elapsed = time.perf_counter() - started
+            entry = self.stage_timings.setdefault(stage, {"calls": 0, "wall_s": 0.0})
+            entry["calls"] += 1
+            entry["wall_s"] += elapsed
+            self.performance_path.parent.mkdir(parents=True, exist_ok=True)
+            self.performance_path.write_text(json.dumps({
+                "schema_version": "1.0.0", "analysis_id": self.id,
+                "attempt_scope": "this process attempt; restored chunks are excluded",
+                "stages": self.stage_timings, "source": str(self.video),
+                "fps": self.config.fps, "chunk_s": self.config.chunk_s,
+                "note": "Wall-clock intervals, not CUDA kernel time; excludes uninstrumented I/O.",
+            }, indent=2), encoding="utf-8")
 
     # ------------------------------------------------------------------ state
     def as_dict(self) -> dict[str, Any]:
@@ -269,6 +295,7 @@ class Analysis:
             "video": self.video.name,
             "error": self.error,
             "report": str(self.report_path) if self.report_path else None,
+            "stage_timings": self.stage_timings,
             **self.progress.as_dict(),
         }
         payload["eta_s"] = (
@@ -321,7 +348,7 @@ class Analysis:
             self._step("screen", 1.0, "Продолжаю прерванный расчёт")
         else:
             self._step("screen", 0.1, "Ищу фрагменты, на которых видно поле")
-            scan = screen(
+            scan = self._timed("screen", screen,
                 str(self.video), PlayabilityConfig(min_grass_share=self.config.min_grass_share)
             )
             chunks = plan_chunks(
@@ -380,7 +407,8 @@ class Analysis:
                     continue
             name = f"{self.id}-{chunk['name']}"
             media = Path(self.config.media_dir) / name / f"{name}.mp4"
-            transcode(self.video, media, chunk["start_s"], chunk["duration_s"], self.config.fps)
+            self._timed("chunk_transcode", transcode,
+                        self.video, media, chunk["start_s"], chunk["duration_s"], self.config.fps)
 
             def on_chunk(value: float, index=index, chunk=chunk, analysed_s=analysed_s) -> None:
                 # The backend runs its stages one after another and restarts
@@ -395,7 +423,7 @@ class Analysis:
                     f"{chunk['end_s']:.0f} с записи",
                 )
 
-            predictions = core.analyse(
+            predictions = self._timed("perception_roundtrip", core.analyse,
                 f"{self.config.media_container_root}/{name}/{name}.mp4",
                 name,
                 chunk["duration_s"],
@@ -435,12 +463,15 @@ class Analysis:
         self._step("refine", 0.2, "Команды, роли и номера по всей записи")
         full_clip = Path(self.config.media_dir) / self.id / f"{self.id}.mp4"
         if not full_clip.is_file():
-            transcode(self.video, full_clip, 0.0, scan["duration_s"], self.config.fps)
-        refined, refinement = refine_predictions(
-            merged["predictions"],
-            VideoFrames(str(full_clip)),
-            RefinementConfig(link_tracklets=True),
-        )
+            self._timed("full_transcode", transcode,
+                        self.video, full_clip, 0.0, scan["duration_s"], self.config.fps)
+        frame_loader = VideoFrames(str(full_clip))
+        try:
+            refined, refinement = self._timed("refinement", refine_predictions,
+                merged["predictions"], frame_loader, RefinementConfig(link_tracklets=True),
+            )
+        finally:
+            frame_loader.close()
         (target / "predictions_refined.json").write_text(
             json.dumps({"predictions": refined}, ensure_ascii=False), encoding="utf-8"
         )
@@ -449,15 +480,27 @@ class Analysis:
         )
 
         self._step("report", 0.3, "Считаю статистику и события")
-        kept, calibration = drop_uncalibrated(refined, CalibrationConfig())
-        report = match_statistics(
+        kept, calibration = self._timed("calibration_filter", drop_uncalibrated,
+                                       refined, CalibrationConfig())
+        report = self._timed("base_statistics", match_statistics,
             kept, StatsConfig(fps=self.config.fps), TrajectoryConfig(fps=self.config.fps)
         )
+        report = report_with_duration(report, round(scan["duration_s"] * 1000))
         report["title"] = self.title
         report["source"] = str(target / "predictions_refined.json")
+        with (target / "predictions_refined.json").open("rb") as prediction_stream:
+            report["predictions_sha256"] = hashlib.file_digest(
+                prediction_stream, "sha256"
+            ).hexdigest()
+        report["video_source"] = str(target / "clip_web.mp4")
         report["calibration"] = {k: v for k, v in calibration.items() if k != "rejected"}
         if self.roster:
             report["roster"] = self.roster
+        report["detailed_statistics"] = self._timed("detailed_statistics", detailed_report,
+            report, match_id=self.id, duration_ms=round(scan["duration_s"] * 1000),
+            predictions=kept, config=self.config.report_config,
+        )
+        report["performance_file"] = str(self.performance_path)
         (target / "match_report.json").write_text(
             json.dumps(report, ensure_ascii=False), encoding="utf-8"
         )
@@ -465,7 +508,7 @@ class Analysis:
 
         self._step("report", 0.8, "Готовлю запись для витрины")
         try:
-            web_clip(full_clip, target / "clip_web.mp4")
+            self._timed("web_encode", web_clip, full_clip, target / "clip_web.mp4")
         except (subprocess.CalledProcessError, OSError):
             shutil.copy2(full_clip, target / "clip_web.mp4")
 

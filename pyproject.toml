@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling>=1.27"]
+requires = ["hatchling==1.27.0"]
 build-backend = "hatchling.build"
 
 [project]
@@ -9,6 +9,16 @@ description = "Evidence-grounded, local-first football match intelligence"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "Apache-2.0"}
+license-files = ["LICENSE"]
+keywords = ["football", "soccer", "computer-vision", "video-analysis", "vlm"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
   "fastapi==0.141.1",
   "httpx==0.28.1",
@@ -38,6 +48,7 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+extend-exclude = ["services/perception"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]

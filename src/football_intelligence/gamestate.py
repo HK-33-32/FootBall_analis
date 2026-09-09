@@ -957,21 +957,35 @@ class ImageSequenceFrames:
 class VideoFrames:
     """Frame loader over a video file, decoding sequentially where possible."""
 
-    def __init__(self, path: str):
+    def __init__(self, path: str, sequential_gap_frames: int = 32):
         import cv2
 
         self._capture = cv2.VideoCapture(path)
         self._position = 0
+        self._sequential_gap_frames = sequential_gap_frames
 
     def __call__(self, frame_number: int) -> np.ndarray | None:
         import cv2
 
-        if frame_number - 1 != self._position:
+        if frame_number < 1:
+            return None
+        gap = frame_number - 1 - self._position
+        # Seeking every second frame repeatedly decodes the same GOP. Grab
+        # intervening frames without colour conversion; retain random access.
+        if 0 < gap <= self._sequential_gap_frames:
+            for _ in range(gap):
+                if not self._capture.grab():
+                    return None
+                self._position += 1
+        elif gap != 0:
             self._capture.set(cv2.CAP_PROP_POS_FRAMES, frame_number - 1)
             self._position = frame_number - 1
         ok, frame = self._capture.read()
         self._position += 1
         return frame if ok else None
+
+    def close(self) -> None:
+        self._capture.release()
 
 
 def sequence_frame_loader(root: str, sequence: str) -> FrameLoader:

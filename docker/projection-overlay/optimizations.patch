@@ -1,0 +1,21 @@
+--- a/engine/IDATR/create_court_file.py
++++ b/engine/IDATR/create_court_file.py
+@@ -76,6 +76,7 @@
+             glob.glob(os.path.join(data_path, data, "img1/*.npy"))
+         )
+ 
++        homography_cache = {}
+         with open(refined_track_path, "r") as refined_track_file:
+             for line in refined_track_file:
+                 # Each line should have 11 columns:
+@@ -101,7 +102,9 @@
+                 if (frame_num - 1) < 0 or (frame_num - 1) >= len(homo_file_path):
+                     # If homography file is missing or out of range, skip or handle
+                     continue
+-                homography = np.load(homo_file_path[frame_num - 1])
++                if frame_num not in homography_cache:
++                    homography_cache[frame_num] = np.load(homo_file_path[frame_num - 1])
++                homography = homography_cache[frame_num]
+ 
+                 # Convert to bounding corners
+                 x_e = l + w

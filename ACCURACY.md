@@ -2,7 +2,9 @@
 
 ## Measured inherited baseline
 
-The only measured baseline currently available comes from the supplied legacy project at `C:\Users\Andrei\Documents\Football_grade\football_core\docs\ACCURACY.md`. It reports 2,250 SoccerNet GSR frames, IoU ≥ 0.5:
+The only measured baseline currently available comes from the separately supplied
+legacy Football Core project's `docs/ACCURACY.md`. It reports 2,250 SoccerNet GSR
+frames, IoU ≥ 0.5:
 
 | Metric | Baseline |
 |---|---:|
@@ -571,3 +573,75 @@ the team attacks -- and possession flow: spells, turnovers, and how long a
 spell lasted. Acceleration is the shakiest of these, being a second
 derivative of a noisy position, and is taken from the smoothed speed series
 over a baseline rather than between frames.
+
+## 2026-09-07 — Exact-output postprocessing acceleration
+
+This is a runtime result, not a new model accuracy result. On the unchanged
+SoccerNet GSR validation inputs SNGS-021/033/045/090, calibration plus statistics
+is 2.24–2.61x faster than commit 7c485be, with identical output hashes in all
+three repeats. Full-sequence refinement outputs also match an independently
+decoded sequential reference. Native compressed-video A/B is measured separately.
+No frozen-test tuning, model/FPS change or new GS-HOTA claim.
+
+Provenance, reference-decoder distinction, timing samples and limitations:
+`docs/PERFORMANCE_20260907.md`, experiment EXP-20260907-01, and machine-readable
+`runs/performance_20260907/comparison.json`. Existing measured accuracy values above
+remain unchanged. The new reference-style JSON exports estimates/unknowns honestly;
+schema breadth is not evidence of semantic accuracy.
+
+## 2026-09-08 — Native GPU milestone and exact-output projection cache
+
+Existing measured values above are preserved. A new native 750-frame SNGS-021
+validation run scores raw GS-HOTA **50.534**, IDF1 **55.175**; the historical raw
+artifact scores 50.529 / 55.175. This is not the refined four-sequence macro score
+55.998 and is not evidence of a meaningful accuracy improvement. Official evaluator
+commit: 9c25232f6f2b56c9f203f1eb55784ff1e97df683; prediction/config/model provenance
+is saved in runs/gpu_20260908_SNGS-021_metrics.json and its runtime manifest.
+
+On the unlabelled 7.6 s ARG–FRA development clip, native GPU wall time decreased
+450.3 -> 220.7 s (**2.04x**). All 2,664 frame/track IDs, image boxes and attributes
+match; pitch projections do not all match (maximum component difference 0.303 m).
+Therefore exact full-pipeline accuracy preservation is not claimed.
+
+An optional seeded calibration replay gives 750/750 byte-identical matrices and
+identical repeated predictions, but GS-HOTA **50.527**, IDF1 55.175. This small
+negative result is retained; deterministic sampling remains opt-in, without seed
+tuning. Separately, a projection-only matrix cache reduces median time from
+25.723 to 1.757 s (**14.64x stage-only**) over three paired repeats, with all output
+files byte-identical, including verification in the final Docker image. No new
+whole-match speedup is inferred by multiplying these separate results.
+
+Full protocols, timing samples, immutable image IDs, uncertainty and artifacts:
+docs/PERFORMANCE_20260908.md; experiments EXP-20260908-01 through 04. Frozen tests
+were not used. The new report coverage 183/190 = 96.32% describes source-frame
+availability, not semantic event accuracy or full-match coverage.
+
+### Follow-up: model startup, not new accuracy
+
+EXP-20260908-05 changes only RF-DETR MD5 read block size, retaining all complete
+weight checks. On the same 190-frame ARG–FRA development input, two unprofiled
+A/B pairs give median initialization 84.600 -> 47.502 s (1.781x); all four complete
+tracking CSVs are byte-identical. No new SoccerNet score or semantic accuracy
+claim follows from this result. Sum of imports/init/tracking is 129.033 -> 92.684 s,
+not an end-to-end job or full-match time. Samples, hashes, source/image identities,
+memory measurements and limitations are recorded in docs/STARTUP_20260908.md and
+data/runtime/startup_20260908/comparison.json. Earlier accuracy values are unchanged.
+
+Environment-audit qualification, Sep 9: the host workload changed during the
+initial and supplemental series, so whole-startup timings above are observational,
+not a precise causal speedup. All nine completed unprofiled runs have identical
+tracking outputs and loaded weight hashes (observations.json); the separately
+measured complete-file MD5 component is 6.56x faster with identical digests. No
+additional GS-HOTA or semantic accuracy evaluation was performed for this I/O patch.
+
+### Follow-up: CLIP loading, 2026-09-09 — no new accuracy score
+
+EXP-20260909-01 removes redundant base-CLIP loading, not model inference. Two
+component pairs retain exact values/dtypes for all 460 state entries and exact
+real-crop/text outputs. Native 190-frame ARG-FRA development A/B with explicit
+calibration seed 0 retains all 2,664 predictions exactly, including pitch values.
+Observed complete job time 195.2 -> 173.4 s (single pair, shared-host/cache caveats);
+CLIP-process peak PyTorch allocation 1,804.7 -> 1,056.4 MiB. No full-match/SOTA or
+accuracy gain claimed, no frozen-test tuning. Previous accuracy values unchanged.
+Config/model/image/source hashes, samples and failure limitations:
+docs/CLIP_LOADING_20260909.md; data/runtime/clip_loading_20260909/native_comparison.json.

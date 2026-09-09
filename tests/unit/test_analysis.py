@@ -165,3 +165,22 @@ def test_resuming_something_that_was_never_planned_is_none(tmp_path):
     from football_intelligence.analysis import AnalysisManager
 
     assert AnalysisManager(AnalysisConfig(reports_dir=tmp_path)).resume("nope") is None
+
+
+def test_stage_timing_records_success_and_failure_without_changing_results(tmp_path):
+    import json
+
+    import pytest
+
+    analysis = Analysis(tmp_path / "match.mp4", "test-only", AnalysisConfig(reports_dir=tmp_path))
+    assert analysis._timed("test_stage", lambda value: value + 1, 5) == 6
+
+    def test_only_failure():
+        raise ValueError("test failure")
+
+    with pytest.raises(ValueError, match="test failure"):
+        analysis._timed("test_stage", test_only_failure)
+    saved = json.loads(analysis.performance_path.read_text("utf-8"))
+    assert saved["stages"]["test_stage"]["calls"] == 2
+    assert saved["stages"]["test_stage"]["wall_s"] >= 0
+    assert "stage_timings" in analysis.as_dict()

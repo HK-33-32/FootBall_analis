@@ -9,4 +9,8 @@ data/*
 *.mp4
 *.mkv
 *.avi
-
+.env
+weights
+dist
+.build
+*.egg-info

@@ -1,0 +1,113 @@
+--- a/engine/jersey_model/CLIPFinetune.py
++++ b/engine/jersey_model/CLIPFinetune.py
+@@ -10,11 +10,23 @@
+         num_classes_role: int = 5,
+         num_classes_number: int = 11,  # 0-10s
+         color_embedding_dim: int = 768,  # 512 for vit-B/32,
+-        freeze_clip: bool = True
++        freeze_clip: bool = True,
++        checkpoint_state=None
+     ):
+         super().__init__()
+         # Load CLIP model
+-        self.clip_model, self.preprocess = clip.load(clip_model_name)
++        if checkpoint_state is None:
++            self.clip_model, self.preprocess = clip.load(clip_model_name)
++        else:
++            from clip.model import build_model
++            from clip.clip import _transform
++            from fi_clip_loading import clip_state_from_checkpoint
++            backbone = clip_state_from_checkpoint(checkpoint_state, clip_model_name)
++            device = "cuda" if torch.cuda.is_available() else "cpu"
++            self.clip_model = build_model(backbone).to(device)
++            if device == "cpu":
++                self.clip_model.float()
++            self.preprocess = _transform(self.clip_model.visual.input_resolution)
+         self.clip_feature_dim = self.clip_model.visual.output_dim
+ 
+         # Freeze CLIP parameters if specified
+@@ -48,6 +60,13 @@
+         # 3. Jersey color encoder
+         # We'll use CLIP's text encoder to create color embeddings
+         self.color_projection = nn.Linear(self.clip_feature_dim, color_embedding_dim)
++        if checkpoint_state is not None:
++            self.load_state_dict(checkpoint_state, strict=True)
++
++    @classmethod
++    def from_checkpoint(cls, checkpoint_path, **kwargs):
++        state = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
++        return cls(checkpoint_state=state, **kwargs)
+ 
+     def encode_image(self, image):
+         with torch.no_grad() if self.clip_model.visual.parameters().__next__().requires_grad == False else torch.enable_grad():
+--- a/engine/inference_soccernetGSR.py
++++ b/engine/inference_soccernetGSR.py
+@@ -440,8 +440,7 @@
+         if self.jersey_mode == 'CLIP':
+             clip_cfg = self.cfg['CLIP']
+             model_dir = clip_cfg['MODEL_PATH']
+-            self.jersey_model = CLIPFinetune()
+-            self.jersey_model.load_state_dict(torch.load(model_dir, weights_only=False))
++            self.jersey_model = CLIPFinetune.from_checkpoint(model_dir)
+             self.jersey_model = self.jersey_model.to(self.device)
+             self.jersey_model.eval()
+             self.jersey_tokenizer = None
+--- a/engine/tracklet_attributes.py
++++ b/engine/tracklet_attributes.py
+@@ -325,8 +325,7 @@
+ 
+     reid = shared_reid("osnet_x1_0", cfg["REID"]["MODEL_PATH"], device)
+     transforms = get_transforms(image_size=(256, 128))
+-    jersey_model = CLIPFinetune()
+-    jersey_model.load_state_dict(torch.load(cfg["CLIP"]["MODEL_PATH"], weights_only=False))
++    jersey_model = CLIPFinetune.from_checkpoint(cfg["CLIP"]["MODEL_PATH"])
+     jersey_model = jersey_model.to(device).eval()
+ 
+     for split in splits:
+--- /dev/null
++++ b/engine/fi_clip_loading.py
+@@ -0,0 +1,44 @@
++"""Validate the existing ViT-L/14 checkpoint before constructing its CLIP backbone.
++
++No tensors are fabricated and no weight fallback/download is performed here.
++The upstream CLIP builder and full model load subsequently enforce all remaining keys.
++"""
++
++from collections.abc import Mapping
++
++SUPPORTED_MODEL = "ViT-L/14"
++EXPECTED_SHAPES = {
++    "visual.conv1.weight": (1024, 3, 14, 14),
++    "visual.positional_embedding": (257, 1024),
++    "visual.proj": (1024, 768),
++    "positional_embedding": (77, 768),
++    "token_embedding.weight": (49408, 768),
++    "ln_final.weight": (768,),
++    "text_projection": (768, 768),
++}
++
++
++def clip_state_from_checkpoint(state, model_name=SUPPORTED_MODEL):
++    """Return a non-mutating prefix view; reject drift from the supported architecture."""
++    if model_name != SUPPORTED_MODEL:
++        raise ValueError(
++            "Direct loading supports ViT-L/14 only; use the legacy constructor "
++            "explicitly for a different backbone"
++        )
++    if not isinstance(state, Mapping) or not all(isinstance(key, str) for key in state):
++        raise ValueError("Expected a plain CLIPFinetune state dictionary")
++    prefix = "clip_model."
++    backbone = {key[len(prefix) :]: value for key, value in state.items() if key.startswith(prefix)}
++    for name, expected in EXPECTED_SHAPES.items():
++        value = backbone.get(name)
++        if value is None or tuple(getattr(value, "shape", ())) != expected:
++            raise ValueError(
++                f"Checkpoint architecture mismatch: {prefix}{name}, expected {expected}"
++            )
++    for name, expected in (("visual.transformer.resblocks.", 24), ("transformer.resblocks.", 12)):
++        actual = sum(
++            key.startswith(name) and key.endswith(".attn.in_proj_weight") for key in backbone
++        )
++        if actual != expected:
++            raise ValueError(f"Checkpoint transformer depth mismatch: {name}, expected {expected}")
++    return backbone

@@ -26,6 +26,7 @@ from ..identity import GlobalIdentitySolver, IdentityConfig
 from ..memory import MatchMemory
 from ..perception import LegacyCoreClient
 from ..pipeline import MatchPipeline
+from ..reporting import ReportConfig, detailed_report
 from ..rosters import MatchRoster, RosterStore, install_bundled_rosters
 from ..viewer import library
 from ..vlm import OpenAICompatibleVLM
@@ -387,6 +388,9 @@ def create_app(data_dir: str | Path | None = None) -> FastAPI:
     # a page: the clip streams, so seeking works and the page stays small.
     reports_root = Path(os.environ.get("FI_REPORTS_DIR", root / "reports"))
     application.state.reports_root = reports_root
+    metrics_path = os.environ.get("FI_REPORT_METRICS")
+    report_config = (ReportConfig.model_validate_json(Path(metrics_path).read_text("utf-8"))
+                     if metrics_path else ReportConfig())
 
     analysis_config = AnalysisConfig(
         core_url=os.environ.get("FI_CORE_URL", "http://host.docker.internal:8000"),
@@ -396,6 +400,7 @@ def create_app(data_dir: str | Path | None = None) -> FastAPI:
         fps=int(os.environ.get("FI_ANALYSIS_FPS", "25")),
         chunk_s=float(os.environ.get("FI_CHUNK_SECONDS", "60")),
         cooldown_s=float(os.environ.get("FI_CHUNK_COOLDOWN_SECONDS", "0")),
+        report_config=report_config,
     )
     analyses = AnalysisManager(analysis_config)
     application.state.analyses = analyses
@@ -491,6 +496,15 @@ def create_app(data_dir: str | Path | None = None) -> FastAPI:
     @application.get("/api/v1/reports/{report_id}")
     def get_report(report_id: str) -> dict[str, Any]:
         return json.loads(_require_report(report_id).path.read_text(encoding="utf-8"))
+
+    @application.get("/api/v1/reports/{report_id}/statistics")
+    def report_statistics(report_id: str) -> dict[str, Any]:
+        report = get_report(report_id)
+        if report.get("detailed_statistics"):
+            return report["detailed_statistics"]
+        if "fps" not in report:
+            raise HTTPException(422, "legacy report lacks source FPS; regenerate match_report.json")
+        return detailed_report(report, match_id=report_id, config=report_config)
 
     @application.get("/api/v1/reports/{report_id}/video")
     def report_video(report_id: str):

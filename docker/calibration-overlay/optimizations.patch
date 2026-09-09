@@ -1,0 +1,14 @@
+--- a/engine/kpts.py
++++ b/engine/kpts.py
+@@ -682,7 +682,10 @@
+     if len(xs) < min_inliers:
+         return np.zeros((0, 3), dtype=np.float32)
+ 
+-    idx = np.random.choice(len(xs), size=min(len(xs), num_random_points), replace=False)
++    from fi_calibration_sampling import sample_circle_indices
++    seed = os.environ.get('FG_CALIB_SEED')
++    idx = sample_circle_indices(len(xs), num_random_points,
++                                seed=int(seed) if seed is not None else None)
+     pts = np.stack([xs[idx], ys[idx]], axis=1).astype(np.float32)
+ 
+     if len(pts) < 5:

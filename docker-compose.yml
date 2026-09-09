@@ -5,8 +5,9 @@ services:
     build:
       context: .
     image: football-intelligence:0.1.0
+    user: "${FI_CONTAINER_UID:-10001}:${FI_CONTAINER_GID:-10001}"
     ports:
-      - "${FI_PORT:-8080}:8080"
+      - "127.0.0.1:${FI_PORT:-8080}:8080"
     volumes:
       - ./data:/data
       # finished matches: one directory per match, holding match_report.json
@@ -24,6 +25,7 @@ services:
       FI_MEDIA_CONTAINER_ROOT: "${FI_MEDIA_CONTAINER_ROOT:-/data/media}"
       FI_CHUNK_SECONDS: "${FI_CHUNK_SECONDS:-60}"
       FI_CONFIG: /app/configs/local_16gb.yaml
+      FI_REPORT_METRICS: /app/configs/report_metrics.json
       FI_PERCEPTION_URL: "${FI_PERCEPTION_URL:-}"
       FI_PERCEPTION_API_KEY: "${FI_PERCEPTION_API_KEY:-}"
       FI_VLM_BASE_URL: "${FI_VLM_BASE_URL:-}"
@@ -36,15 +38,23 @@ services:
 
   perception:
     profiles: ["full"]
-    image: "${FI_PERCEPTION_IMAGE:-football-core:1.0.0}"
+    build:
+      context: .
+      dockerfile: services/perception/Dockerfile
+      args:
+        PERCEPTION_STAGE: "${FI_PERCEPTION_STAGE:-runtime}"
+        CUDA_ARCHS: "${FI_CUDA_ARCHS:-89;120}"
+    image: "${FI_PERCEPTION_IMAGE:-football-intelligence-perception:0.1.0}"
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
-      - ./data/perception:/data
-      - "${FI_LEGACY_WEIGHTS:-../../Football_grade/football_core/weights}:/weights:ro"
+      # Matches api's FI_MEDIA_DIR -> /data/media inside this container.
+      - ./data/perception_benchmark:/data
+      - "${FI_WEIGHTS_DIR:-./weights}:/opt/weights"
     environment:
-      FG_CHECKPOINT_DIR: /weights/checkpoints
-      RF_HOME: /weights/rfdetr
+      FG_CHECKPOINT_DIR: /opt/weights/checkpoints
+      TORCH_HOME: /opt/weights/torch
+      RF_HOME: /opt/weights/rfdetr
       FG_DEFAULT_RENDER_VIDEO: "false"
       FG_QUEUE_WORKERS: "1"
     shm_size: 8gb
@@ -75,7 +85,7 @@ services:
       - --limit-mm-per-prompt
       - '{"image":24}'
     ports:
-      - "8001:8000"
+      - "127.0.0.1:8001:8000"
     volumes:
       - "${HF_HOME:-./data/huggingface}:/root/.cache/huggingface"
     shm_size: 8gb

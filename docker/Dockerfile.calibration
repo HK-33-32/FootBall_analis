@@ -1,0 +1,6 @@
+ARG CORE_IMAGE=football-core:optimized-20260908
+FROM ${CORE_IMAGE}
+COPY docker/calibration-overlay /opt/calibration-overlay
+COPY src/football_intelligence/calibration_sampling.py /app/engine/fi_calibration_sampling.py
+RUN python -c "import sys; sys.path.insert(0, '/opt'); from apply_core_overlay import apply_overlay; from pathlib import Path; apply_overlay(Path('/app'), Path('/opt/calibration-overlay'))"
+# Explicit opt-in via configs/core_reproducible.env; unset retains legacy sampling.
