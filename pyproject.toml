@@ -32,7 +32,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest==8.4.1", "pytest-cov==6.2.1", "ruff==0.12.10"]
+dev = ["pytest==8.4.1", "pytest-cov==6.2.1", "ruff==0.16.6"]
 benchmark = ["SoccerNet==0.1.62"]
 
 [project.scripts]
